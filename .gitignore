@@ -1,0 +1,11 @@
+# models & build artifacts (large, re-downloadable)
+models/
+*.gguf
+stt-venv/
+llama-build/
+# eval output
+eval/results_*.json
+# python
+__pycache__/
+*.pyc
+.DS_Store

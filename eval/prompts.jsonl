@@ -1,0 +1,10 @@
+{"id":"arith","tier":1,"prompt":"What is 17 times 3? Reply with just the number.","expect_exact":["51"],"max_tokens":400}
+{"id":"ready","tier":1,"prompt":"Reply with exactly the word READY and nothing else.","expect_exact":["ready"],"ci":true,"max_tokens":400}
+{"id":"pong","tier":1,"prompt":"Output only: PONG","expect_exact":["pong"],"ci":true,"max_tokens":400}
+{"id":"cap","tier":1,"prompt":"What is the capital of Brazil? Answer with one word.","expect_exact":["brasilia","brasília"],"ci":true,"max_tokens":400}
+{"id":"sum","tier":1,"prompt":"Add 2 + 2 + 3. Reply with only the number.","expect_exact":["7"],"max_tokens":400}
+{"id":"json","tier":1,"prompt":"Return a JSON object with the key \"ok\" set to true. Output only the JSON.","expect_json":{"ok":true},"max_tokens":400}
+{"id":"oi","tier":1,"prompt":"oi","expect_nonempty":true,"max_tokens":400}
+{"id":"disk","tier":2,"tools":true,"verify_df":true,"prompt":"Check disk usage on this machine: run df -h / and report the Use% for the root filesystem.","expect_regex":"[0-9]+%","max_tokens":800}
+{"id":"httpd","tier":2,"tools":true,"verify_httpd":true,"prompt":"Install and verify a simple HTTP server with Docker: remove any existing container named hermes-httpd, then run an nginx container named hermes-httpd published on 127.0.0.1:8099 (i.e. -p 127.0.0.1:8099:80), and verify it responds with HTTP 200 (for example curl -I http://127.0.0.1:8099). Report the HTTP status.","expect_regex":"(?i)200|ok|running","max_tokens":800}
+{"id":"selfh","tier":2,"tools":true,"verify_selfh":true,"prompt":"Using the terminal tool, fetch https://r2.selfh.st/directory/software.json (for example with curl) and name three self-hosted applications listed in its entries. Do this in one command.","expect_regex":"(?i)docker|self-hosted","max_tokens":600}
