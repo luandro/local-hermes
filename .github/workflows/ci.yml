@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Repo health check
+        run: bash scripts/health-check.sh
+      - name: Validate shell scripts
+        run: |
+          for f in serve.sh setup.sh stt/transcribe.sh scripts/health-check.sh; do
+            bash -n "$f" && echo "ok $f"
+          done
+      - name: Validate eval prompts JSONL
+        run: python3 -c "import json; [json.loads(l) for l in open('eval/prompts.jsonl') if l.strip()]; print('prompts ok')"

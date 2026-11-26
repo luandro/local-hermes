@@ -1,0 +1,19 @@
+# Pre-commit hooks for local-hermes (framework: pre-commit.com)
+# Install: pre-commit install
+minimum_pre_commit_version: "3.0.0"
+repos:
+  - repo: local
+    hooks:
+      - id: health-check
+        name: local-hermes health check
+        entry: scripts/health-check.sh --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: no-secrets
+        name: no secrets / tokens
+        entry: >-
+          bash -c 'git grep -nEI "(nvapi-[A-Za-z0-9]{20}|sk-[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|BEGIN [A-Z ]*PRIVATE KEY)" -- "$@" || true' --
+        language: system
+        pass_filenames: true
+        types: [text]
