@@ -58,9 +58,15 @@ HERMES_LOCAL_STT_LANGUAGE=pt
 Restore it to undo the wiring.
 
 ## Performance notes
-CPU-only ~20–25 tok/s prompt, ~5 tok/s gen. Single-round tool tasks ≈ 100 s;
-multi-round web tasks are slow. See `LEARNINGS.md` for the full list of what
-helps (and what doesn't) on CPU. Hermes requires ≥64k model context.
+CPU-only ~20–25 tok/s prompt, ~5 tok/s gen. Single-round tool tasks ≈ 150 s;
+multi-round tasks need free RAM (swap thrash tanks pp to ~5 tok/s). Key wins are in
+`LEARNINGS.md` (hybrid-checkpoint cache fix, thread split, reasoning budget). Hermes
+requires ≥64k model context.
+
+## Roadmap / contributing
+See `LEARNINGS.md` → "PENDING improvements" for the next experiments (LoRA merge,
+native build, Q4_0 A/B, Vulkan, eval round-gating). PRs welcome — keep changes
+documented in `LEARNINGS.md`/`EVAL_PLAN.md` and cite sources in `research/`.
 
 ## License
-Code: MIT. Models follow their upstream licenses (LFM: lfm1.0; Parakeet: cc-by-4.0).
+Code: MIT (see `LICENSE`). Models follow their upstream licenses (LFM: lfm1.0; Parakeet: cc-by-4.0).

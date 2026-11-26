@@ -67,9 +67,35 @@ Running log of hard-won facts from getting this setup working. Newest at top.
 
 ## Loop status
 - Iter0 4/7 (contention) → Iter1 isolation 7/7 → Iter2 disk PASS/selfh slow → Iter3 Q4 ~2.5× →
-  Iter4 tuning + static selfh catalog → **tier1 7/7, tier2 disk PASS (103s) + selfh PASS (646s)**.
-  Functional for single-round local tasks. Multi-round web browsing remains too slow on CPU.
+  Iter4 tuning + static selfh catalog → tier1 7/7, tier2 disk+httpd green → Iter5 BLAS (no gain)
+  + httpd task → Iter6 deep-research hybrid-checkpoint fix (multi-round pp eliminated: rounds 2+
+  ~400 tok not ~2,400; disk 305→150s) → Iter7 RAM wall (swap full → pp 22→5 tok/s).
   See EVAL_PLAN.md iteration log.
+
+## Deep-research findings (research/deep-research-latency.md) — the big ones
+- **LFM3 is tri-hybrid (13 conv + 5 SWA-256 + 6 global).** llama.cpp default
+  `--checkpoint-min-step 8192` discards short-round checkpoints → **full prompt reprocess every
+  tool call** (the real 11-min cause). Fix: `--cache-prompt --ctx-checkpoints 16
+  --checkpoint-min-step 256 -cram 1024` → rounds 2+ process only new tokens (CONFIRMED).
+- **`-c` reduction & KV q8_0 give ~0% at 4k** on CPU (LFM3's global-attn KV is tiny); KV q8_0 can
+  even be slower on CPU decode. Drop unless RAM-bound past 32k.
+- **Threads:** `-t 4` (physical cores) for generation, `-tb 8` for prompt ingest. `-tb 4` tanked
+  pp to 15 tok/s; `-tb 8` restored ~22.
+- **mlock** pins weights vs swap (needs `ulimit -l` raised as root; capped at 3 GB here → use mmap).
+- **Reasoning:** don't disable (costs ~7 BFCL pts on 1.7B); use `--reasoning-budget 96–192`.
+- **Runtime `--lora` contaminates prefix/KV cache** → merge LoRA into GGUF (bf16→Q4_K_M) and drop
+  `--lora` (PENDING — needs disk headroom).
+- **Round count is the multi-round killer:** Hermes v0.14 has no per-turn tool_choice; force 1 round
+  via prompt + `tool_use_enforcement: true` (or an eval-only tool_choice required→none wrapper).
+
+## PENDING improvements (discovered, not yet applied)
+1. **Free RAM / mlock** — swap full is the current wall (pp 5 tok/s). Close apps or raise ulimit -l.
+2. **Merge LoRA → GGUF** (drop runtime --lora cache contamination) — needs ~7 GB disk.
+3. **Eval-only 2-request wrapper** (tool_choice required→none) to guarantee 1 round for selfh.
+4. **GGML_NATIVE=ON, BLAS=OFF** build (llamafile SGEMM beat OpenBLAS ~30% pp in community tests).
+5. **Q4_0 vs Q4_K_M** A/B after LoRA merge (Q4_0 CPU_REPACK can be faster; validate JSON fidelity).
+6. **Vulkan on UHD 620** controlled test (mixed reports; PP up to 1.8× or regression).
+7. **hermes-vcc-engine** plugin (instant compression, no LLM call) for long sessions.
 
 ## Research findings (subagents → research/*.md)
 - **Quant weights are NOT the CPU speed lever at 1–3B** (memory-bandwidth-bound). Attack prompt

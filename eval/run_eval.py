@@ -18,17 +18,19 @@ Usage:
   python3 run_eval.py --tier 2 --mode agent --timeout 1200 --budget 1200
   python3 run_eval.py --mode telegram --only oi --budget 600
 """
-import argparse, json, re, subprocess, sys, time, urllib.request
+import argparse, json, os, re, subprocess, sys, time, urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-BASE = "http://127.0.0.1:8080/v1"
-MODEL = "lfm3-harbor-hermes"
+BASE = os.environ.get("HERMES_BASE_URL", "http://127.0.0.1:8080/v1")
+MODEL = os.environ.get("HERMES_MODEL", "lfm3-harbor-hermes")
+HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+SERVER_LOG = Path(os.environ.get("LLAMA_SERVER_LOG", "/tmp/opencode/serve.log"))
 
 
 def _env():
     env = {}
-    for line in Path("/home/luandro/.hermes/.env").read_text().splitlines():
+    for line in (HERMES_HOME / ".env").read_text().splitlines():
         if "=" in line and not line.strip().startswith("#"):
             k, v = line.split("=", 1)
             env[k.strip()] = v.strip()
@@ -88,8 +90,8 @@ def call_telegram(prompt, timeout):
     """Measure the LAST real Telegram turn from logs (user triggers by sending a msg).
     Enforces a numeric prompt-token budget. Does NOT send (bot self-messages don't
     trigger the agent, and we must correlate to a real user turn)."""
-    gw = Path("/home/luandro/.hermes/logs/gateway.log")
-    srv = Path("/home/luandro/models/lfm3-hermes/server.log")
+    gw = HERMES_HOME / "logs" / "gateway.log"
+    srv = SERVER_LOG
     ptok = _last_prompt_tokens(srv, 0)
     # latency: last inbound->response-ready pair for telegram
     lat = None
