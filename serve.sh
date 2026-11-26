@@ -46,7 +46,8 @@ elif command -v nvidia-smi >/dev/null 2>&1; then
   GPU_ARGS=(-ngl 99)                       # CUDA if an NVIDIA GPU is present
 else
   GPU_ARGS=(-ngl 0)                        # CPU
-  THREAD_ARGS=(-t "$NPROC" -ub 1024)
+  # 4 physical cores for generation (bandwidth); 8 threads for prompt ingest (compute).
+  THREAD_ARGS=(-t 4 -tb 8 -b 2048 -ub 512)
   KV_ARGS=(-ctk q8_0 -ctv q8_0)            # KV quant (needs -fa on)
 fi
 
@@ -56,5 +57,8 @@ exec "$BIN" \
   -m "$BASE" --lora "$LORA" \
   -c "$CTX" --host 127.0.0.1 --port "$PORT" --alias "$ALIAS" \
   "${GPU_ARGS[@]}" "${THREAD_ARGS[@]}" -fa on "${KV_ARGS[@]}" \
-  --no-reasoning-preserve -cram 4096 --parallel 1 \
-  --spec-type ngram-simple --spec-ngram-simple-size-m 32
+  --load-mode mmap \
+  --cache-prompt --ctx-checkpoints 16 --checkpoint-min-step 256 -cram 1024 \
+  --parallel 1 \
+  --reasoning-format deepseek --reasoning-budget 192 \
+  --spec-type ngram-simple --spec-ngram-simple-size-n 8 --spec-ngram-simple-size-m 6 --spec-ngram-simple-min-hits 2 --spec-draft-n-max 8
