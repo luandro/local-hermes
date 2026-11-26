@@ -30,6 +30,8 @@ find_bin() {
   return 1
 }
 BIN="${LLAMA_SERVER:-$(find_bin || true)}"
+# LLAMA_SERVER may be a directory or a binary; normalize to the binary path.
+if [ -d "$BIN" ]; then BIN="$BIN/llama-server"; fi
 [ -x "$BIN" ] || { echo "ERROR: llama-server not found. Run ./setup.sh first." >&2; exit 1; }
 [ -f "$BASE" ] || { echo "ERROR: base model not found: $BASE (run ./setup.sh)" >&2; exit 1; }
 [ -f "$LORA" ] || { echo "ERROR: LoRA not found: $LORA (run ./setup.sh)" >&2; exit 1; }
@@ -50,7 +52,7 @@ fi
 
 echo "platform=$OS/$ARCH threads=$NPROC bin=$BIN"
 echo "model=$BASE"
-exec "$BIN/llama-server" \
+exec "$BIN" \
   -m "$BASE" --lora "$LORA" \
   -c "$CTX" --host 127.0.0.1 --port "$PORT" --alias "$ALIAS" \
   "${GPU_ARGS[@]}" "${THREAD_ARGS[@]}" -fa on "${KV_ARGS[@]}" \
