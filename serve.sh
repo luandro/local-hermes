@@ -48,7 +48,6 @@ else
   GPU_ARGS=(-ngl 0)                        # CPU
   # 4 physical cores for generation (bandwidth); 8 threads for prompt ingest (compute).
   THREAD_ARGS=(-t 4 -tb 8 -b 2048 -ub 512)
-  KV_ARGS=(-ctk q8_0 -ctv q8_0)            # KV quant (needs -fa on)
 fi
 
 echo "platform=$OS/$ARCH threads=$NPROC bin=$BIN"
@@ -60,5 +59,5 @@ exec "$BIN" \
   --load-mode mmap \
   --cache-prompt --ctx-checkpoints 16 --checkpoint-min-step 256 -cram 1024 \
   --parallel 1 \
-  --reasoning-format deepseek --reasoning-budget 192 \
-  --spec-type ngram-simple --spec-ngram-simple-size-n 8 --spec-ngram-simple-size-m 6 --spec-ngram-simple-min-hits 2 --spec-draft-n-max 8
+  --reasoning-format deepseek --reasoning-budget 96 \
+  --spec-type ngram-simple --spec-ngram-simple-size-n 8 --spec-ngram-simple-size-m 6 --spec-ngram-simple-min-hits 2
