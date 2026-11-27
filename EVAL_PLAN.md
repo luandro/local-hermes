@@ -103,6 +103,16 @@ using a tight **eval → plan → dev → eval** loop.
     one-time artifact, not a regression. **KEPT.** omh's 3-tool/2.2 KB block left in place
     (user relies on omh; small vs the 74% win). Repro: `config/lean-config.yaml`, applied by
     `setup.sh`. Backup: `~/.hermes/config.yaml.bak.promptshrink-20261127_032953`.
+- **Iter 9 — spec-decode OFF A/B (2026-11-27, THIS subagent).** Tested the Gemini audit's claim that
+  n-gram spec should be OFF on this CPU (pp_batch/tg only 1.5–2.5×). Same build, same eval
+  (`--mode agent --only disk,selfh --budget 600 --timeout 600`), gateway stopped, arms sequential.
+  - **spec ON** (ngram-simple n8 m6 hits2): disk **199.8 s**, selfh **34.5 s**, 2/2; pp 20.99 tok/s,
+    tg 9.87–12.45 tok/s.
+  - **spec OFF** (line removed): disk **181.1 s**, selfh **39.1 s**, 2/2; pp 20.05 tok/s,
+    tg 9.46–12.42 tok/s.
+  - **KEPT spec OFF.** Faster on the substantial task (disk −19 s), equal-within-noise on the trivial
+    one; pp/tg identical within noise. Audit confirmed (neutral-to-better on a 1.7B). Full table in
+    LEARNINGS.md "Spec-decode A/B".
 
 ## Codex consultation (gpt-6.2-sol, low, read-only) — folded in
 Verdict: useful smoke test, insufficient acceptance test. Blockers adopted:

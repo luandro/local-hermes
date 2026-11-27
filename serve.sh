@@ -59,5 +59,4 @@ exec "$BIN" \
   --load-mode mmap \
   --cache-prompt --ctx-checkpoints 16 --checkpoint-min-step 256 -cram 1024 \
   --parallel 1 \
-  --reasoning-format deepseek --reasoning-budget 96 \
-  --spec-type ngram-simple --spec-ngram-simple-size-n 8 --spec-ngram-simple-size-m 6 --spec-ngram-simple-min-hits 2
+  --reasoning-format deepseek --reasoning-budget 96

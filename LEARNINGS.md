@@ -2,6 +2,25 @@
 
 Running log of hard-won facts from getting this setup working. Newest at top.
 
+## Spec-decode A/B — n-gram spec OFF (2026-11-27, THIS subagent)
+Audit (`research/gemini-audit-lfm3-1.7b-thinkpad-cpu.md`, "Descodificação Especulativa") argues
+n-gram spec should be OFF by default on this CPU: pp_batch/tg ratio is only 1.5–2.5×, so n-gram
+only helps very repetitive JSON and hurts free dialogue. **Proven with the eval — KEPT spec OFF.**
+- **Method:** same server build, same eval (`--mode agent --only disk,selfh --budget 600
+  --timeout 600`), gateway stopped (no `--pause-gateway`), single server, arms sequential. First-turn
+  prompt ~3,127 tok (lean config). tok/s from `serve.log` `prompt eval time` / `eval time` lines.
+- **Results:**
+
+  | arm | disk | selfh | pp tok/s (1st turn) | tg tok/s | PASS |
+  |---|---|---|---|---|---|
+  | spec ON (ngram-simple n8 m6 hits2) | 199.8 s | 34.5 s | 20.99 | 9.87–12.45 | 2/2 |
+  | spec OFF (line removed) | **181.1 s** | 39.1 s | 20.05 | 9.46–12.42 | 2/2 |
+
+- **Verdict:** spec-OFF faster on the substantial task (disk −19 s) and equal-within-noise on the
+  trivial one (selfh +5 s on a 35 s task); pp/tg identical within run-to-run noise. Audit's
+  "neutral-to-better on a 1.7B" confirmed. **COMMITTED** (removed the `--spec-type ngram-simple …`
+  line from serve.sh). n-gram spec buys nothing on this CPU and adds complexity — leave it off.
+
 ## Environment
 - CPU-only ThinkPad (Intel UHD 620, 8 threads, 23 GB RAM, swap often full, disk ~93% used).
 - No NVIDIA GPU / vLLM. Path is **llama.cpp GGUF on CPU**.
@@ -118,7 +137,9 @@ Running log of hard-won facts from getting this setup working. Newest at top.
 6. **Vulkan on UHD 620** controlled test — audit says DESCARTAR (UHD620 offload regressed to 1.9–3.9 tok/s).
 7. **hermes-vcc-engine / llmslim** plugin (instant compression, no LLM call) for long sessions.
 8. **`--load-mode none` + THP + systemd MemoryMin=2.5G** — audit: file mmap bypasses THP → ~30% pp loss.
-9. **Spec-decode OFF A/B** — audit math says n-gram hurts on CPU (pp_batch/tg only 1.5–2.5×). [subagent in progress]
+9. ~~**Spec-decode OFF A/B**~~ **DONE (2026-11-27) — KEPT spec OFF.** Audit math (n-gram hurts on
+   CPU, pp_batch/tg only 1.5–2.5×) confirmed: spec-OFF disk 181 s vs spec-ON 200 s, selfh 39 vs 34 s
+   (trivial, within noise), both 2/2 PASS, pp/tg identical within noise. See "Spec-decode A/B" above.
 10. ~~Benchmark `harness-hub/LFM3-1.7B-pi-GGUF`~~ **DONE (not worth it — see above).** Prompt size
     beats round count on CPU; pi's 21.3k tool prompt is the killer. local-pi kept local, unpublished.
 
