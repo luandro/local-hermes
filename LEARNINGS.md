@@ -2,6 +2,32 @@
 
 Running log of hard-won facts from getting this setup working. Newest at top.
 
+## Disk-eval flake — ROOT CAUSE + fix (2026-11-27, THIS subagent)
+The `disk` eval intermittently ballooned to 12–20k tokens over multiple rounds and FAILED at
+600 s, while warm single-round runs PASS in ~17–48 s. **Root cause: the `disk` prompt was
+open-ended** ("Check disk usage on this machine: run df -h / and report the Use%…"). A 1.7B
+reasoning model sometimes loops — re-running the tool / re-reasoning across rounds — and each
+round appends to the prompt. Nothing bounded it: `agent.max_turns: 8` allows up to 8
+accumulating rounds, and `compression.threshold: 0.5` (= 32k of 64k) never fires on a 12–20k
+prompt. The `selfh` case was already fixed this way (reworded to "run exactly this once … stop")
+and is reliable; `disk` was the last open-ended tool prompt.
+- **Evidence (baseline, this subagent):** 13 warm `disk` runs all PASS at exactly **2 turns**,
+  bounded — turn 1 = 4 tok (warm cache hit) / 3,115 tok (cold), turn 2 = 80 tok; latency
+  16.9–48.7 s. The balloon did NOT reproduce warm (it is a multi-round tail event). The only
+  FAIL was a cold run where the auto-restarted gateway stole the single llama slot (1 turn
+  logged, then over-budget) — contention, not a balloon. Iter10's 12,209-tok FAIL is the same
+  multi-round accumulation (~4 rounds).
+- **Fix (minimal, = the proven selfh pattern):** reword the `disk` prompt in
+  `eval/prompts.jsonl` to force a single round: *"Call the terminal tool immediately and run
+  exactly this command once. Report the Use% value for the root filesystem and stop.\n\ndf -h /"*.
+  No config/serve.sh change needed; the prompt is the lever (prompt SIZE/rounds is the #1 CPU
+  lever here). One source of truth: `eval/prompts.jsonl`.
+- **Verify (fix):** `disk` **PASS 3/3** — 172.5 s (cold, 3,123-tok first turn), 30.1 s, 24.5 s;
+  all exactly **2 turns**, turn 2 = 80 tok each, prompt bounded. `selfh` re-check **PASS 41.3 s**
+  (2 turns) — no regression. **KEPT.**
+- Backup: `~/.hermes/config.yaml.bak.diskfix-20261127_071323` (config unchanged by this fix;
+  backup taken per protocol).
+
 ## Load-mode A/B — mmap vs none / THP (2026-11-27, THIS subagent)
 Audit (`research/gemini-audit-lfm3-1.7b-thinkpad-cpu.md`, "Proteção via cgroup v2 e o Conflito
 THP vs. mmap") claims file-backed `mmap` bypasses Transparent Hugepages → 4 KiB pages → TLB misses

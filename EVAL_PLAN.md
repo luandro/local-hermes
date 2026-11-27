@@ -64,6 +64,21 @@ using a tight **eval → plan → dev → eval** loop.
 - A real Telegram "oi" returns a reply in < 5 min.
 
 ## Iteration log
+- **Iter 11 — disk-eval flake root cause + fix (2026-11-27, THIS subagent).** The `disk` eval
+  intermittently ballooned to 12–20k tokens over multiple rounds and FAILED at 600 s, while warm
+  single-round runs PASS in ~17–48 s. **Root cause: the `disk` prompt was open-ended** ("Check disk
+  usage… run df -h /… report Use%"); a 1.7B reasoning model sometimes loops across rounds, and with
+  `agent.max_turns: 8` + `compression.threshold: 0.5` (=32k, never fires at 12–20k) nothing bounded
+  the accumulation. `selfh` was already reliable because its prompt forces a single round.
+  - **Baseline evidence:** 13 warm `disk` runs all PASS at exactly 2 turns (turn1 = 4 tok warm /
+    3,115 cold, turn2 = 80 tok), 16.9–48.7 s. Balloon is a multi-round tail event (didn't reproduce
+    warm); the one cold FAIL was gateway slot contention (auto-restart), not a balloon.
+  - **Fix (minimal, = selfh pattern):** reword `disk` prompt in `eval/prompts.jsonl` to *"Call the
+    terminal tool immediately and run exactly this command once. Report the Use% value for the root
+    filesystem and stop.\n\ndf -h /"*. No config/serve.sh change. Single source of truth = prompts.jsonl.
+  - **Verify:** `disk` **PASS 3/3** — 172.5 s (cold, 3,123-tok turn1), 30.1 s, 24.5 s; all 2 turns,
+    turn2 = 80 tok, bounded. `selfh` re-check **PASS 41.3 s** (no regression). **KEPT.**
+    Backup: `~/.hermes/config.yaml.bak.diskfix-20261127_071323`.
 - **Iter 0 — baseline (model, tier1):** 4/7 (arith/ready/pong over-budget with empty tokens
   = gateway slot contention at start; later cases fast). Triage: contention, not capability.
 - **Iter 1 — dev: eval isolation (`--pause-gateway`, fault-tolerant).** Re-eval tier1: **7/7 PASS**
