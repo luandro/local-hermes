@@ -231,3 +231,15 @@ Verdict: useful smoke test, insufficient acceptance test. Blockers adopted:
 EVAL (tier1 model + telegram probe + tier2 agent) → TRIAGE (prompt-size / runaway /
 tool / capability) → PLAN (top backlog item) → DEV (smallest change) → EVAL (tier1 100%
 & no latency regression before tier2). Full loop doc above.
+## E00 — instrumentation + honest eval (2026-11-27)
+Plan v2 (Codex-debated) ranks this #1: no further A/B is trustworthy without it. Done:
+- **Agent-mode token accounting** via `hermes --usage-file` (input/output/cache/reasoning/total/api_calls).
+  The `--max-prompt-tokens` guard now fires for agent runs (was dead — pt was always None).
+- **Per-request memory-pressure trace** (`eval/memtrace.py`): PSI memory+io, swap-in/out, major faults,
+  MemAvailable, llama RSS — before/after each case, null-safe. New `swapin` column + `MEMPRESSURE` line.
+- **Validated under the swap wall:** 1 trivial case → swapin=278, majflt=6475, avail_min=3.9GB,
+  75s latency. Confirms the trace captures the paging that dominates wall-time on this host.
+- **Blocker (host, not code):** swap 19G/19G full, ~4GiB free (non-killable apps). Evals time out on
+  latency. Re-run for clean absolutes on an idle host / after zswap reboot. Instrumentation is valid now.
+- **Next (gated on a clean host):** W1 typed storage workflow + pre-LLM rules route; R1 rules/BM25
+  baseline; E10 Laya fine-tune only if E00 traces prove an ambiguous slice rules can't fill.

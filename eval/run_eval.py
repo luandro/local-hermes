@@ -22,6 +22,8 @@ import argparse, json, os, re, subprocess, sys, time, urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from memtrace import MemTracer, _find_llama_pid  # E00 memory-pressure instrumentation
 BASE = os.environ.get("HERMES_BASE_URL", "http://127.0.0.1:8080/v1")
 MODEL = os.environ.get("HERMES_MODEL", "lfm3-harbor-hermes")
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
@@ -59,14 +61,35 @@ def call_model(prompt, max_tokens, timeout, allow_reasoning):
             "prompt_tokens": u.get("prompt_tokens"), "completion_tokens": u.get("completion_tokens")}
 
 
-def call_agent(prompt, timeout):
+def call_agent(prompt, timeout, usage_path=None):
     t0 = time.time()
+    cmd = ["hermes", "-z", prompt]
+    tmp_usage = None
+    if usage_path is None:
+        # one-shot: write usage to a temp file so we can account tokens per hop
+        import tempfile
+        fd, tmp_usage = tempfile.mkstemp(suffix=".usage.json", prefix="hermes_eval_")
+        os.close(fd)
+        usage_path = tmp_usage
+        cmd += ["--usage-file", usage_path]
     try:
-        p = subprocess.run(["hermes", "-z", prompt], capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        usage = None
+        try:
+            usage = json.loads(Path(usage_path).read_text())
+        except Exception:
+            usage = None
         return {"ok": p.returncode == 0, "text": (p.stdout or p.stderr).strip(),
-                "latency": time.time() - t0, "finish": f"exit={p.returncode}"}
+                "latency": time.time() - t0, "finish": f"exit={p.returncode}",
+                "usage": usage}
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "timeout", "latency": time.time() - t0}
+    finally:
+        if tmp_usage:
+            try:
+                os.unlink(tmp_usage)
+            except OSError:
+                pass
 
 
 def _last_prompt_tokens(server_log, since):
@@ -223,6 +246,8 @@ def main():
     ap.add_argument("--only", default="")
     ap.add_argument("--pause-gateway", action="store_true",
                     help="stop the Telegram gateway during the run and restart it after (clean signal)")
+    ap.add_argument("--no-memtrace", action="store_true",
+                    help="disable per-case memory-pressure tracing (PSI/swap/majflt)")
     args = ap.parse_args()
 
     cases = [json.loads(l) for l in (HERE / "prompts.jsonl").read_text().splitlines() if l.strip()]
@@ -240,17 +265,37 @@ def main():
             print(f"warn: gateway stop timed out/failed ({e}); continuing")
         time.sleep(2)
     results, npass = [], 0
-    print(f"{'id':8} {'t':2} {'res':5} {'lat(s)':>7} {'ptok':>5} {'ctok':>5}  note")
-    print("-" * 72)
+    llama_pid = None if args.no_memtrace else _find_llama_pid()
+    if not args.no_memtrace and not llama_pid:
+        print("note: no llama-server pid found; memory trace disabled", file=sys.stderr)
+    print(f"{'id':8} {'t':2} {'res':5} {'lat(s)':>7} {'ptok':>5} {'ctok':>5} {'swapin':>6}  note")
+    print("-" * 80)
     try:
         for c in cases:
             to = min(args.timeout, args.budget) if args.budget else args.timeout
-            if args.mode == "agent":
-                res = call_agent(c["prompt"], to)
-            elif args.mode == "telegram":
-                res = call_telegram(c["prompt"], to)
-            else:
-                res = call_model(c["prompt"], c["max_tokens"], to, args.allow_reasoning)
+            mt = MemTracer(llama_pid) if llama_pid else None
+            if mt:
+                mt.__enter__()
+            try:
+                if args.mode == "agent":
+                    res = call_agent(c["prompt"], to)
+                elif args.mode == "telegram":
+                    res = call_telegram(c["prompt"], to)
+                else:
+                    res = call_model(c["prompt"], c["max_tokens"], to, args.allow_reasoning)
+            finally:
+                mem = mt.stop() if mt else None
+            # Agent mode: pull token counts from the --usage-file report.
+            if args.mode == "agent" and res.get("usage"):
+                u = res["usage"]
+                # oneshot.py schema: input_tokens/output_tokens/cache_read_tokens/
+                # cache_write_tokens/reasoning_tokens/total_tokens/api_calls
+                res["prompt_tokens"] = u.get("input_tokens")
+                res["completion_tokens"] = u.get("output_tokens")
+                res["cache_read_tokens"] = u.get("cache_read_tokens")
+                res["cache_write_tokens"] = u.get("cache_write_tokens")
+                res["reasoning_tokens"] = u.get("reasoning_tokens")
+                res["api_calls"] = u.get("api_calls")
             ok, why = score(c, res, args.allow_reasoning)
             pt = res.get("prompt_tokens")
             if pt is not None and pt > args.max_prompt_tokens:
@@ -259,9 +304,14 @@ def main():
                 ok, why = False, "over-budget"
             npass += ok
             txt = (res.get("text") or "").replace("\n", " ")[:34]
+            swpin = (mem or {}).get("pswpin_delta")
             print(f"{c['id']:8} {c['tier']:<2} {('PASS' if ok else 'FAIL'):5} {res.get('latency',0):7.1f} "
-                  f"{str(res.get('prompt_tokens','')):>5} {str(res.get('completion_tokens','')):>5}  {why} | {txt}")
-            results.append({"id": c["id"], "pass": ok, "why": why, **res})
+                  f"{str(res.get('prompt_tokens','')):>5} {str(res.get('completion_tokens','')):>5} "
+                  f"{str(swpin if swpin is not None else ''):>6}  {why} | {txt}")
+            rec = {"id": c["id"], "pass": ok, "why": why, **res}
+            if mem:
+                rec["mem"] = mem
+            results.append(rec)
             (HERE / f"results_{args.mode}.json").write_text(json.dumps(results, indent=2))
     finally:
         if args.pause_gateway:
@@ -270,7 +320,15 @@ def main():
             except Exception as e:
                 print(f"warn: gateway restart failed ({e}); run 'hermes gateway start'")
 
-    print("-" * 72)
+    print("-" * 80)
+    # E00 summary: aggregate memory pressure across the run (null-safe).
+    if not args.no_memtrace and results:
+        swpins = [r["mem"]["pswpin_delta"] for r in results if r.get("mem") and r["mem"].get("pswpin_delta") is not None]
+        majflts = [r["mem"]["pgmajfault_delta"] for r in results if r.get("mem") and r["mem"].get("pgmajfault_delta") is not None]
+        memin = [r["mem"]["mem_available_min_kb"] for r in results if r.get("mem") and r["mem"].get("mem_available_min_kb") is not None]
+        if swpins:
+            print(f"MEMPRESSURE  swapin_total={sum(swpins)}  majflt_total={sum(majflts) if majflts else '?'}  "
+                  f"avail_min_kb={min(memin) if memin else '?'}")
     print(f"TOTAL {npass}/{len(cases)} pass  ({args.mode}, tier={args.tier})")
     sys.exit(0 if npass == len(cases) else 1)
 

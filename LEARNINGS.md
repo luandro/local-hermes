@@ -424,3 +424,24 @@ within-run A/B directions are trustworthy** (large effect sizes, single model lo
 - **selfh.st data:** no API, but static `https://r2.selfh.st/directory/software.json` (~1,700 apps,
   no auth) + `metrics.json`; secondary `awesome-selfhosted/awesome-selfhosted-data` YAML; compose
   snippets per-app from upstream repo.
+## E00 — honest eval + memory-pressure instrumentation (2026-11-27)
+- **Why first:** cache warmth already reversed one experiment's interpretation (round-gating). Without
+  trustworthy measurement, no further A/B is believable. This is the plan's #1 (Codex + user agreed).
+- **Token accounting in agent mode (was missing):** `call_agent` now passes `--usage-file` to
+  `hermes -z` and parses the one-shot report. Schema (from `hermes_cli/oneshot.py` `_USAGE_KEYS`):
+  `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`,
+  `total_tokens`, `api_calls`. The `--max-prompt-tokens` runaway guard now actually gates agent mode
+  (previously `prompt_tokens` was always None for agent runs, so the budget never fired).
+- **Per-request memory-pressure trace (`eval/memtrace.py`, new):** wraps each case in a MemTracer that
+  snapshots `/proc/pressure/{memory,io}` (PSI some/full total µs), `/proc/vmstat` swap-in/out + major
+  faults, `MemAvailable`, and the llama-server pid RSS/majflt — before/after, reported as deltas.
+  Null = unmeasured (never 0), per the plan. New `swapin` column in the table + a `MEMPRESSURE`
+  summary line (swapin_total, majflt_total, avail_min_kb). `--no-memtrace` disables it.
+- **Validated live (under the swap wall):** a single trivial `ready` case showed `swapin=278`,
+  `majflt=6475`, `avail_min=3.9GB` — proving the instrumentation captures the exact paging that
+  makes a 20-token request take 75s. This is the diagnostic that separates real work from swap luck.
+- **Host-state caveat:** the ThinkPad is currently at the memory wall (swap 19G/19G full, ~4GiB free,
+  held by non-killable apps). Evals time out on latency, not correctness. Absolute numbers remain
+  depressed until the host is idle / zswap is active (reboot). Directions + instrumentation are valid.
+- **Files:** `eval/run_eval.py` (call_agent usage-file, memtrace wrap, swapin col, MEMPRESSURE summary,
+  `--no-memtrace`), `eval/memtrace.py` (new). No model/serve/config changes.
