@@ -100,12 +100,19 @@ Running log of hard-won facts from getting this setup working. Newest at top.
 7. **hermes-vcc-engine / llmslim** plugin (instant compression, no LLM call) for long sessions.
 8. **`--load-mode none` + THP + systemd MemoryMin=2.5G** — audit: file mmap bypasses THP → ~30% pp loss.
 9. **Spec-decode OFF A/B** — audit math says n-gram hurts on CPU (pp_batch/tg only 1.5–2.5×). [subagent in progress]
-10. **Benchmark `harness-hub/LFM3-1.7B-pi-GGUF`** (pi LoRA, RL-trained in the `pi` agent, "37% fewer
-    tool calls") vs hermes LoRA → **separate repo `~/Dev/AI/local-pi`**. Directly targets round count.
+10. ~~Benchmark `harness-hub/LFM3-1.7B-pi-GGUF`~~ **DONE (not worth it — see above).** Prompt size
+    beats round count on CPU; pi's 21.3k tool prompt is the killer. local-pi kept local, unpublished.
 
 ## DONE
 - **Hermes upgraded v0.14.0 → v0.23.4** (2026-11-26). Single gateway, ~1,570 fewer prompt tok/call,
   skills 58→44, browser_*→browser_exec, #46201 fixed. (Audit item P1 complete.)
+- **pi LoRA benchmarked vs hermes (2026-11-27, repo `~/Dev/AI/local-pi`, NOT published):** pi NOT
+  worth pursuing. Both 2/3 (disk+selfh PASS, httpd FAIL both). selfh: hermes 63s vs pi 123s (~2×).
+  Root cause: **pi's tool prompt is ~21.3k tokens** → 15–18 min/round CPU ingest; its "+37% fewer
+  tool calls" (a model-quality claim) can't overcome harness-prompt weight on CPU. **Lesson: on CPU,
+  prompt SIZE is the lever, not round count** — opposite of the hypothesis. Also: `httpd` (install+verify)
+  is too hard for a 1.7B CPU agent (both fail) — doesn't differentiate; don't gate on it.
+  Raw logs + table in local-pi/eval/results + EVAL_PLAN.md (commit 441a7f7).
 
 ## Research findings (subagents → research/*.md)
 - **Quant weights are NOT the CPU speed lever at 1–3B** (memory-bandwidth-bound). Attack prompt
