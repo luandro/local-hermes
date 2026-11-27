@@ -31,6 +31,8 @@ fi
 # --- locate llama-server ---
 find_bin() {
   for c in \
+    "$HOME/models/llama-build/build-native/bin/llama-server" \
+    "$DIR/../llama-build/build-native/bin/llama-server" \
     "$DIR/../llama-build/build/bin/llama-server" \
     "$HOME/models/llama-build/build/bin/llama-server" \
     "$HOME/.local/llama.cpp-bin"/*/llama-server \
