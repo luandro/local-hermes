@@ -243,3 +243,11 @@ Plan v2 (Codex-debated) ranks this #1: no further A/B is trustworthy without it.
   latency. Re-run for clean absolutes on an idle host / after zswap reboot. Instrumentation is valid now.
 - **Next (gated on a clean host):** W1 typed storage workflow + pre-LLM rules route; R1 rules/BM25
   baseline; E10 Laya fine-tune only if E00 traces prove an ambiguous slice rules can't fill.
+
+## W1 — storage-status pre-LLM plugin (2026-11-27)
+- Deterministic `pre_llm_call` route: unambiguous read-only disk questions answered with a
+  verified `df`+`du` scan, zero model calls (block before inference). Partial-intent guard:
+  any write/conditional/ambiguous intent falls through to Hermes. Unit tests ALL PASS.
+- Plugin enabled in live config (backup taken); e2e `hermes -z` blocked by host swap wall
+  (swap 19G/19G full). Re-run on idle host: readonly → api_calls=0; "clean it up" → api_calls>0.
+- Next: R1 rules/BM25 baseline; E10 Laya only if E00 traces prove an ambiguous slice rules miss.
