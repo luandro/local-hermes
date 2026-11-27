@@ -180,6 +180,23 @@ Q4_0_R8 repack path); our **Q4_K_M** doesn't engage it. Flags: has `--jinja`/`--
 regresses decode, and would need serve.sh edits anyway. ik-build kept outside repo for a future Q4_0
 trial; mainline builds untouched. Full table in LEARNINGS.md "ik_llama.cpp evaluation".
 
+## Iter 14 — Q4_0 vs Q4_K_M A/B: Q4_0 fidelity-SAFE but NOT faster, KEEP Q4_K_M (2026-11-27, THIS subagent)
+Highest-value remaining lever: Q4_0 CPU_REPACK (mainline `Q4_0_4_4`) + ik_llama `Q4_0_R8` AVX2 fast
+path (community 8th-gen +97% pp, Q4_0-only). Re-merged BF16 (base+adapter re-downloaded from HF,
+peak ~5.8 GiB avail, no OOM), converted bf16 (3.3 G), quantized Q4_0 with existing imatrix
+(995.94 MiB, 4.83 BPW). Bench `-p 2048 -n 128 -t 4 -ngl 0`, 2× each, median (host swap-thrashed —
+absolute numbers contention-depressed, only directions trustworthy):
+- **mainline Q4_K_M:** pp 42.78, tg 15.77. **mainline Q4_0:** pp 40.95 (−4%), tg 15.85 (tie) → not faster.
+- **ik Q4_K_M:** pp 48.21, tg 11.61. **ik Q4_0:** pp 50.75 (+5.3%, high variance 56.8/44.7, NOT +97%),
+  tg 13.67 (below mainline). R8 path engages (ik Q4_0 > mainline Q4_0 pp) but marginal + noisy + decode penalty.
+- **FIDELITY GATE PASS:** Q4_0 eval `--mode agent --only disk,selfh --budget 600` (gateway stopped,
+  clean merged Q4_0, `lora_args=[none]`, 0 CPU_REPACK warns): **disk PASS 120.1 s (df-eq 89),
+  selfh PASS 16.6 s (3 apps) — 2/2.** Q4_0 does not hurt tool-arg/JSON accuracy.
+- **Verdict: KEEP Q4_K_M** — adopt Q4_0 only if faster AND fidelity-ok; it is fidelity-ok but not
+  faster, so no reason to trade Q4_K_M's Q6_K JSON protection. Q4_0 GGUF removed; ~10 GB BF16
+  intermediates cleaned; repro artifacts kept. serve.sh unchanged; ik-build kept for future Q4_0/QAD.
+  Full table in LEARNINGS.md "Q4_0 vs Q4_K_M A/B".
+
 ## Codex consultation (gpt-6.2-sol, low, read-only) — folded in
 Verdict: useful smoke test, insufficient acceptance test. Blockers adopted:
 1. **Test the Telegram path**, not just `hermes -z`/model — add a telegram probe that

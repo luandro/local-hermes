@@ -2,6 +2,47 @@
 
 Running log of hard-won facts from getting this setup working. Newest at top.
 
+## Q4_0 vs Q4_K_M A/B — Q4_0 fidelity-SAFE but NOT faster; KEEP Q4_K_M (2026-11-27, THIS subagent)
+The highest-value remaining lever: Q4_0 with CPU_REPACK (mainline `Q4_0_4_4`) and especially
+ik_llama's `Q4_0_R8` AVX2 fast path (community 8th-gen test showed +97% pp, but only on Q4_0).
+Re-merged to BF16 (base+adapter re-downloaded from HF; `do_merge.py` peak ~5.8 GiB avail, no OOM,
+19 s), converted `--outtype bf16` (3.3 G), quantized Q4_0 with the existing imatrix (995.94 MiB,
+4.83 BPW, 27 s). **Verdict: KEEP Q4_K_M — Q4_0 is fidelity-safe but not faster on either backend.**
+- **Bench A/B** (`-p 2048 -n 128 -t 4 -ngl 0`, 2× each, median). **Caveat: host swap-thrashed the
+  whole session (swap 19G/19G full, other apps not killable) so absolute numbers are
+  contention-depressed (~17 min/run vs ~40 s clean) — only within-arm directions are trustworthy;
+  high variance (±5–8 tok/s) on the ik arms.**
+
+  | backend | quant | pp2048 (med) | tg128 (med) | vs mainline Q4_K_M |
+  |---|---|---|---|---|
+  | mainline native | Q4_K_M | 42.78 (44.38/41.18) | 15.77 (15.08/16.46) | baseline |
+  | mainline native | Q4_0 | 40.95 (41.14/40.76) | 15.85 (16.05/15.64) | pp −4%, tg ≈ noise |
+  | ik_llama c9643ae | Q4_K_M | 48.21 (45.45/50.97) | 11.61 (9.21/14.01) | — |
+  | ik_llama c9643ae | Q4_0 | 50.75 (56.82/44.68) | 13.67 (15.80/11.54) | — |
+
+- **Mainline:** Q4_0 **not faster** — pp 40.95 vs 42.78 (−4%, within noise), tg 15.85 vs 15.77
+  (tie). The `Q4_0_4_4` CPU_REPACK path gives no win here (1.7B is bandwidth-bound, not
+  compute-bound; the audit's own "quant weights aren't the CPU lever at 1–3B" holds).
+- **ik_llama (the R8 fast-path test):** Q4_0 pp 50.75 vs ik Q4_K_M 48.21 = **+5.3%**, NOT the +97%
+  the audit hoped for. The R8 repack path engages (ik Q4_0 pp 50.75 > mainline Q4_0 40.95, +24%),
+  but the absolute jump is modest and **swamped by variance** (run1 56.82 / run2 44.68). ik tg
+  (13.67) is **below mainline** (15.77) — the decode regression from the prior ik eval persists.
+  So even the quant-format-specific lever is marginal and comes with a decode penalty.
+- **FIDELITY GATE — PASS (the decisive result).** Q4_0 does NOT hurt tool-arg/JSON accuracy on
+  this model+imatrix. Eval (`--mode agent --only disk,selfh --budget 600 --timeout 600`, gateway
+  stopped, clean merged Q4_0 via a symlinked MODEL_DIR so `lora_args=[none]`, 0 CPU_REPACK warns):
+  **disk PASS 120.1 s (df-eq 89, correct Use%), selfh PASS 16.6 s (3 apps: 13ft Ladder, 1Panel,
+  2FAuth) — 2/2.** The Q4_K_M Q6_K attention.wv/ffn.w2 JSON protection is not needed for the eval
+  to pass on Q4_0. **But since Q4_0 is not faster, there is no reason to trade that protection away.**
+- **Decision: KEEP Q4_K_M.** Adopt Q4_0 only if faster AND fidelity-ok; it is fidelity-ok but
+  **not faster** (mainline pp −4%, ik +5% pp within noise + decode regression). Q4_0 GGUF removed
+  (not adopted); ~10 GB BF16 intermediates cleaned (merged-bf16.gguf, merged/, base/, adapter/).
+  Repro artifacts kept in `~/models/merge/` (do_merge.py, calib.txt, imatrix.dat). The ik-build is
+  left in place for future Q4_0/QAD experiments; mainline builds untouched; serve.sh unchanged.
+  **Lesson: on this 1.7B CPU box the Q4_0_R8 headline is real but small and noisy; the imatrix Q4_0
+  is accuracy-safe, so the only open question left is a clean idle-host re-bench to confirm the
+  ±5% is noise, not a real regression.**
+
 ## LoRA merge A/B — MERGED model ADOPTED (2026-11-27, THIS subagent)
 The Gemini audit claims runtime `--lora` contaminates the prefix/KV cache and skips fast
 kernels. **Confirmed and fixed: merged the LoRA into a single Q4_K_M GGUF and dropped
@@ -278,7 +319,10 @@ within-run A/B directions are trustworthy** (large effect sizes, single model lo
 4. ~~**GGML_NATIVE=ON, BLAS=OFF** build (llamafile SGEMM beat OpenBLAS ~30% pp in community tests).~~
    **DONE (2026-11-27) — ADOPTED.** pp +19%, tg +2% (3/3 wins), verified `-march=native`. `setup.sh`
    now builds `-DGGML_NATIVE=ON -DGGML_BLAS=OFF`. See "Native build A/B" above.
-5. **Q4_0 vs Q4_K_M** A/B after LoRA merge (Q4_0 CPU_REPACK can be faster; validate JSON fidelity).
+5. ~~**Q4_0 vs Q4_K_M** A/B after LoRA merge (Q4_0 CPU_REPACK can be faster; validate JSON fidelity).~~
+   **DONE (2026-11-27) — KEEP Q4_K_M.** Q4_0 fidelity-SAFE (eval 2/2: disk df-eq, selfh 3 apps) but
+   NOT faster: mainline pp 40.95 vs 42.78 (−4%), tg tie; ik Q4_0 pp +5.3% (within noise, not +97%),
+   tg below mainline. R8 path engages but marginal+noisy. Q4_0 GGUF removed. See "Q4_0 vs Q4_K_M A/B".
 6. **Vulkan on UHD 620** controlled test — audit says DESCARTAR (UHD620 offload regressed to 1.9–3.9 tok/s).
 7. **hermes-vcc-engine / llmslim** plugin (instant compression, no LLM call) for long sessions.
 8. ~~**`--load-mode none` + THP + systemd MemoryMin=2.5G**~~ **DONE (2026-11-27) — REVERTED to mmap.**
