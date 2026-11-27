@@ -136,6 +136,32 @@ compiled with `-march=x86-64` (verified in `build/…/ggml-cpu.dir/flags.make`) 
   default). `serve.sh` left pointing at `build/` (live binary unchanged); a fresh `setup.sh` produces
   the faster native build. OpenBLAS is no longer required (the embedded SGEMM has real AVX2/FMA).
 
+## Thread/batch sweep — current `-t 4 -tb 8 -b 2048 -ub 512` VALIDATED, KEPT (2026-11-27, THIS subagent)
+Goal: confirm or beat the live CPU `THREAD_ARGS` via `llama-bench` (native `build-native` binary,
+merged Q4_K_M, `-ngl 0`). **Caveat: the host was under heavy memory pressure the whole session**
+(swap 100% full, ~15 GB held by other apps that must not be killed). The documented clean baseline
+(pp2048 ≈ 51.8, tg128 ≈ 17.0) was unreproducible — repeated `-t 4` baselines came in at pp 26.0 / tg 8.0
+then pp 16.6 / tg 3.4 (monotonic collapse, ~10× slower wall-clock: 15–17 min per run vs ~40 s clean).
+**Absolute numbers below are contention-depressed and NOT comparable to the clean baseline; only the
+within-run A/B directions are trustworthy** (large effect sizes, single model load per sweep).
+
+- **`-tb` is NOT a `llama-bench` flag** (server-only runtime flag; `llama-bench -tb …` → `error: invalid
+  parameter`). It cannot be benchmarked without the server, which is out of scope. Sweepable axes here:
+  `-t`, `-b`, `-ub` only.
+- **`-t` sweep** (`-p 512 -n 32 -r 1`, one load): t4 pp30.3/tg8.0 · **t6 pp33.6 (+11%)/tg6.5 (−18%)** ·
+  t8 pp24.0/**tg0.18 (pathological SMT thrash)**. → t8 is broken (confirms audit); t4 = best tg, t6 trades
+  tg for pp. Keep **t4** (balanced, best generation).
+- **`-b` sweep @ p512** (`-t 4 -ub 512`): b1024 pp33.5/tg7.7 · b2048 pp24.1/tg7.2 · b4096 pp20.7/tg6.9 —
+  *looked* like b1024 wins. **But at the real `-p 2048 -n 128` it REVERSES:** b1024 pp28.7/tg8.4 ·
+  **b2048 pp34.4 (+20%)/tg13.6 (+62%)**. → small prompts over-provision the batch; b2048 is correct for
+  real pp2048 ingest. Keep **b2048**. (Lesson: never tune `-b` at tiny `-p`.)
+- **`-ub` sweep @ p512** (`-t 4 -b 2048`): ub256 pp25.4/tg7.0 · **ub512 pp27.5/tg10.7** · ub1024 pp26.6/tg9.2
+  → **ub512 (current) best on both.** Keep **ub512**.
+- **Verdict: every measurable axis confirms the current `-t 4 -tb 8 -b 2048 -ub 512`. No change to
+  `serve.sh`.** `-tb 8` is unverifiable via bench but there is no evidence against it; changing it would be
+  a blind guess. **Re-run this sweep on an idle host** (swap not full) to get clean absolute numbers and to
+  finally test `-tb` via the server if desired.
+
 ## Environment
 - CPU-only ThinkPad (Intel UHD 620, 8 threads, 23 GB RAM, swap often full, disk ~93% used).
 - No NVIDIA GPU / vLLM. Path is **llama.cpp GGUF on CPU**.

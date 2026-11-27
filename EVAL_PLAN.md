@@ -159,6 +159,14 @@ using a tight **eval → plan → dev → eval** loop.
   tg 17.04 vs 16.65 = +2.3%; native won 3/3 on both. ADOPTED** — `setup.sh` `build_llama()` now uses
   `-DGGML_NATIVE=ON -DGGML_BLAS=OFF` (Metal kept on macOS). `serve.sh` left on `build/` (live binary
   unchanged). Full table in LEARNINGS.md "Native build A/B".
+- **Iter 12 — thread/batch sweep: current `-t 4 -tb 8 -b 2048 -ub 512` VALIDATED, KEPT (2026-11-27, THIS
+  subagent).** `llama-bench` sweep of `-t`/`-b`/`-ub` (native binary, merged Q4_K_M, `-ngl 0`). Host was
+  swap-thrashing (other apps, not killable) so absolute numbers are contention-depressed (baseline
+  unreproducible: pp 26→16.6 vs clean 51.8) — only within-run A/B directions are trustworthy. Results:
+  `-t` t8 pathological (tg 0.18), t4 best tg / t6 +11% pp −18% tg → keep t4; `-b` b1024 looked better at
+  p512 but **reversed at real p2048** (b2048 +20% pp / +62% tg) → keep b2048; `-ub` ub512 best both → keep
+  ub512. `-tb` is server-only, not benchable. **No serve.sh change; re-run on an idle host for clean
+  numbers.** Full table in LEARNINGS.md "Thread/batch sweep".
 
 ## Codex consultation (gpt-6.2-sol, low, read-only) — folded in
 Verdict: useful smoke test, insufficient acceptance test. Blockers adopted:
