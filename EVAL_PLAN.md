@@ -150,6 +150,15 @@ using a tight **eval → plan → dev → eval** loop.
   AnonHugePages **0 kB** throughout (THP never engaged — no madvise in llama.cpp). **REVERTED to mmap.**
   `none` is not faster (pp identical within noise), THP inert here, and adds swap-eviction risk for no gain.
   Full table in LEARNINGS.md "Load-mode A/B".
+- **Iter 11 — native build A/B: GGML_NATIVE + BLAS=OFF (2026-11-27, THIS subagent).** Tested the Gemini
+  audit's "~30% pp" claim for a native build with the embedded llamafile SGEMM vs the OpenBLAS build.
+  Built a second binary in `build-native` (original `build/` intact), `-DGGML_NATIVE=ON -DGGML_BLAS=OFF`.
+  Verified march in `ggml-cpu.dir/flags.make`: native → `-march=native` (baseline → `-march=x86-64`; the
+  x86-64 in CMakeConfigureLog.yaml is a detection artifact, not a build flag). 3 paired
+  `llama-bench -p 2048 -n 128 -t 4 -ngl 0` runs/arm. **Median pp 51.84 (native) vs 43.54 (BLAS) = +19.1%,
+  tg 17.04 vs 16.65 = +2.3%; native won 3/3 on both. ADOPTED** — `setup.sh` `build_llama()` now uses
+  `-DGGML_NATIVE=ON -DGGML_BLAS=OFF` (Metal kept on macOS). `serve.sh` left on `build/` (live binary
+  unchanged). Full table in LEARNINGS.md "Native build A/B".
 
 ## Codex consultation (gpt-6.2-sol, low, read-only) — folded in
 Verdict: useful smoke test, insufficient acceptance test. Blockers adopted:

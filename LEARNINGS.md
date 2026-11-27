@@ -108,6 +108,34 @@ only helps very repetitive JSON and hurts free dialogue. **Proven with the eval 
   "neutral-to-better on a 1.7B" confirmed. **COMMITTED** (removed the `--spec-type ngram-simple …`
   line from serve.sh). n-gram spec buys nothing on this CPU and adds complexity — leave it off.
 
+## Native build A/B — GGML_NATIVE + BLAS=OFF ADOPTED (2026-11-27, THIS subagent)
+Gemini audit claim: a native build (`-DGGML_NATIVE=ON`) with `-DGGML_BLAS=OFF` (embedded llamafile
+SGEMM, real AVX2/FMA) beats the OpenBLAS build by ~30% on prefill. **Proven on this box — ADOPTED.**
+The starting build was effectively GENERIC: `GGML_NATIVE=ON` was in the cache but the ggml-cpu target
+compiled with `-march=x86-64` (verified in `build/…/ggml-cpu.dir/flags.make`) + OpenBLAS backend.
+- **Method:** second build in a separate dir (`build-native`, original `build/` left intact), 3 paired
+  `llama-bench -m <merged Q4_K_M> -p 2048 -n 128 -t 4 -ngl 0` runs per arm, arms sequential, same box.
+  Build: `-DGGML_NATIVE=ON -DGGML_BLAS=OFF`, 10m10s wall, peak RSS 815 MB, 0 swaps.
+- **Verified march (the whole point):** `build-native/…/ggml-cpu.dir/flags.make` →
+  `-march=native` (baseline `build/` → `-march=x86-64`). The `-march=x86-64` string in
+  `CMakeFiles/CMakeConfigureLog.yaml` is a compiler-detection artifact, NOT a real build flag — the
+  authoritative per-target flags live in `flags.make`. Native binary has **no BLAS device**
+  (`--list-devices` → none); baseline shows `BLAS: OpenBLAS`. Note: `objdump` FMA/AVX2 counts in
+  `libggml-cpu.so` are identical (ggml ships AVX2 via explicit target attrs regardless of `-march`),
+  so the discriminator is the backend (embedded SGEMM vs OpenBLAS) + `-march`, not the instr count.
+- **Results (tok/s, median of 3):**
+
+  | arm | pp2048 (3 runs) | pp median | tg128 (3 runs) | tg median |
+  |---|---|---|---|---|
+  | native + BLAS=OFF | 46.44 / 53.01 / 51.84 | **51.84** | 17.36 / 17.04 / 16.53 | **17.04** |
+  | generic + OpenBLAS | 45.15 / 43.54 / 39.46 | 43.54 | 16.65 / 16.69 / 14.76 | 16.65 |
+
+- **Verdict:** native won **3/3** on both pp and tg. pp **+19.1%** (median, >10% bar), tg **+2.3%**.
+  The audit's "~30% pp" was optimistic but the direction and a clear win hold. **ADOPTED** — `setup.sh`
+  `build_llama()` now uses `-DGGML_NATIVE=ON -DGGML_BLAS=OFF` (Metal path kept on macOS via GGML_METAL
+  default). `serve.sh` left pointing at `build/` (live binary unchanged); a fresh `setup.sh` produces
+  the faster native build. OpenBLAS is no longer required (the embedded SGEMM has real AVX2/FMA).
+
 ## Environment
 - CPU-only ThinkPad (Intel UHD 620, 8 threads, 23 GB RAM, swap often full, disk ~93% used).
 - No NVIDIA GPU / vLLM. Path is **llama.cpp GGUF on CPU**.
@@ -221,7 +249,9 @@ only helps very repetitive JSON and hurts free dialogue. **Proven with the eval 
    ADOPTED.** Merged Q4_K_M, dropped `--lora`: 136→0 CPU_REPACK fallback warnings, prefill
    18.8→41.0 tok/s (~2.2×), 2/2 PASS, cache reuse unchanged. See "LoRA merge A/B" above.
 3. **Eval-only 2-request wrapper** (tool_choice required→none) to guarantee 1 round for selfh.
-4. **GGML_NATIVE=ON, BLAS=OFF** build (llamafile SGEMM beat OpenBLAS ~30% pp in community tests).
+4. ~~**GGML_NATIVE=ON, BLAS=OFF** build (llamafile SGEMM beat OpenBLAS ~30% pp in community tests).~~
+   **DONE (2026-11-27) — ADOPTED.** pp +19%, tg +2% (3/3 wins), verified `-march=native`. `setup.sh`
+   now builds `-DGGML_NATIVE=ON -DGGML_BLAS=OFF`. See "Native build A/B" above.
 5. **Q4_0 vs Q4_K_M** A/B after LoRA merge (Q4_0 CPU_REPACK can be faster; validate JSON fidelity).
 6. **Vulkan on UHD 620** controlled test — audit says DESCARTAR (UHD620 offload regressed to 1.9–3.9 tok/s).
 7. **hermes-vcc-engine / llmslim** plugin (instant compression, no LLM call) for long sessions.

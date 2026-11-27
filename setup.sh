@@ -37,7 +37,7 @@ install_deps(){
 }
 command -v cmake >/dev/null || install_deps
 
-# ---------- 2. build llama.cpp (with BLAS when available) ----------
+# ---------- 2. build llama.cpp (native CPU, embedded SGEMM; Metal on macOS) ----------
 build_llama(){
   if [ -x "$LLAMA_SRC/build/bin/llama-server" ]; then log "llama.cpp already built"; return; fi
   log "building llama.cpp $TAG"
@@ -46,11 +46,12 @@ build_llama(){
     curl -sL -o src.tar.gz "https://github.com/ggml-org/llama.cpp/archive/refs/tags/$TAG.tar.gz"
   fi
   rm -rf ./*; tar -xzf src.tar.gz --strip-components=1
-  local BLAS="-DGGML_BLAS=OFF"
-  if { [ -f /usr/include/cblas.h ] || [ -f /usr/local/include/cblas.h ] || brew --prefix openblas >/dev/null 2>&1; } 2>/dev/null; then
-    BLAS="-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS"
-  fi
-  cmake -B build -DCMAKE_BUILD_TYPE=Release $BLAS
+  # Native CPU build (AVX2/FMA on x86_64, NEON on aarch64) with the embedded
+  # llamafile SGEMM beats OpenBLAS on this CPU: pp2048 +19%, tg +2% (3/3 wins,
+  # llama-bench -p 2048 -n 128 -t 4, 2026-11-27). GGML_NATIVE honours -march=native
+  # on Linux x64/ARM; on macOS GGML_METAL defaults ON so the Metal path is kept.
+  # OpenBLAS is no longer needed (BLAS=OFF); the embedded SGEMM has real AVX2/FMA.
+  cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_BLAS=OFF
   cmake --build build --config Release -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 }
 
