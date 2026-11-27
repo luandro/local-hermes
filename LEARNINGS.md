@@ -302,6 +302,29 @@ within-run A/B directions are trustworthy** (large effect sizes, single model lo
   is too hard for a 1.7B CPU agent (both fail) — doesn't differentiate; don't gate on it.
   Raw logs + table in local-pi/eval/results + EVAL_PLAN.md (commit 441a7f7).
 
+## ik_llama.cpp evaluation — DEAD-END for our Q4_K_M (2026-11-27, THIS subagent)
+- **Build:** OK. `git clone --depth 1 ikawrakow/ik_llama.cpp` → `/home/luandro/models/ik-build`
+  (commit c9643ae), `cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_BLAS=OFF`,
+  `-j4`. IQK optimized GEMM + IQK Flash Attention compiled in. Build took ~2× (two resumable runs,
+  the iqk/*.cpp TUs are huge); no OOM. Binaries at `build/bin/{llama-bench,llama-server}`.
+- **LFM3 support:** YES — loads the merged Q4_K_M, reports arch `lfm3` (params 1.73 B). No arch error.
+- **A/B vs mainline native** (merged Q4_K_M, `-p 2048 -n 128 -t 4 -ngl 0`, 2× each, median):
+  | backend        | pp2048 (tok/s)      | tg128 (tok/s)       |
+  | -------------- | ------------------- | ------------------- |
+  | mainline b12686| 53.33 / 52.39 → **52.9** | 16.22 / 16.07 → **16.1** |
+  | ik_llama c9643ae| 52.71 / 55.77 → **54.2** | 12.26 / 15.47 → **13.9** |
+  → pp **+2.5%** (within noise, NOT the +97% the audit hoped for); tg **−14%** (regression).
+- **Why no prefill jump:** the audit's +97% was on a **Q4_0/QAT** model where ik's `Q4_0_R8` AVX2
+  repack GEMM (PR #2472) engages. Our model is **Q4_K_M** — K-quant GEMM does not hit that iqk fast
+  path, so ik ≈ mainline on pp and slower on tg. The headline win is quant-format-specific, not general.
+- **Flags (serve.sh needs):** PRESENT → `--jinja`, `--reasoning-budget`, `--reasoning-format deepseek`,
+  `-fa/--flash-attn`, `-cram/--cache-ram`, `--ctx-checkpoints`, `-np/--parallel`, `--lora`,
+  `--chat-template`. **MISSING → `--cache-prompt`, `--load-mode`, `--checkpoint-min-step`** (serve.sh
+  uses all three). So even if bench had won, serve.sh would need edits to adopt.
+- **VERDICT: KEEP mainline.** Not ≥15% pp faster, decode regresses, and 3 serve.sh flags are absent.
+  ik-build left in place outside the repo (`/home/luandro/models/ik-build`) for future Q4_0 experiments;
+  mainline `build/`+`build-native/` untouched. No serve.sh change.
+
 ## Research findings (subagents → research/*.md)
 - **Quant weights are NOT the CPU speed lever at 1–3B** (memory-bandwidth-bound). Attack prompt
   length, tool count, rounds, and caching instead. Q4_K_M is already right; don't go Q8.

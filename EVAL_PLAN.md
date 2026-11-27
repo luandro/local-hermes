@@ -168,6 +168,18 @@ using a tight **eval → plan → dev → eval** loop.
   ub512. `-tb` is server-only, not benchable. **No serve.sh change; re-run on an idle host for clean
   numbers.** Full table in LEARNINGS.md "Thread/batch sweep".
 
+## Iter 13 — ik_llama.cpp backend eval: DEAD-END for Q4_K_M, KEEP mainline (2026-11-27, THIS subagent)
+Gemini audit's PRINCIPAL prefill candidate (`ik_llama.cpp`, PR #2782 LFM3 + #2472 AVX2 Q4_0_R8 GEMM;
+community i5-8500T +97% pp / +19% tg). Built commit c9643ae in `/home/luandro/models/ik-build`
+(Release, GGML_NATIVE=ON, IQK GEMM+FA). **Loads LFM3** (arch `lfm3`, merged Q4_K_M). A/B identical
+config (`-p 2048 -n 128 -t 4 -ngl 0`, 2×, median): **pp 54.2 vs mainline 52.9 (+2.5%, noise);
+tg 13.9 vs 16.1 (−14% regression).** No prefill jump because the +97% is **Q4_0/QAT-specific** (ik's
+Q4_0_R8 repack path); our **Q4_K_M** doesn't engage it. Flags: has `--jinja`/`--reasoning-budget`/
+`--ctx-checkpoints`/`-fa`/`-cram`/`--lora`; **missing `--cache-prompt`, `--load-mode`,
+`--checkpoint-min-step`** (all used by serve.sh). **Verdict: KEEP mainline** — fails the ≥15% pp bar,
+regresses decode, and would need serve.sh edits anyway. ik-build kept outside repo for a future Q4_0
+trial; mainline builds untouched. Full table in LEARNINGS.md "ik_llama.cpp evaluation".
+
 ## Codex consultation (gpt-6.2-sol, low, read-only) — folded in
 Verdict: useful smoke test, insufficient acceptance test. Blockers adopted:
 1. **Test the Telegram path**, not just `hermes -z`/model — add a telegram probe that
