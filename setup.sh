@@ -89,7 +89,10 @@ p=os.environ["HERMES_CFG"]; c=yaml.safe_load(open(p)) or {}
 m=c.setdefault("model",{})
 m.update({"default":"lfm3-harbor-hermes","provider":"custom",
           "base_url":"http://127.0.0.1:8080/v1","api_key":"dummy","api_mode":"chat_completions"})
-c["platform_toolsets"]={"cli":["terminal","web"],"telegram":["terminal","file","web"]}
+c["platform_toolsets"]={"cli":["terminal"],"telegram":["terminal","file","web"]}
+# Lean prompt: no plugins (portfolio-manager alone = 40 tools). On CPU, prompt
+# SIZE dominates wall-time; the eval path (disk/selfh) needs only `terminal`.
+c.setdefault("plugins",{})["enabled"]=[]
 stt=c.setdefault("stt",{}); stt.update({"enabled":True,"provider":"local_command",
     "local":{"model":"parakeet-ptbr","language":"pt"}})
 yaml.safe_dump(c, open(p,"w"), sort_keys=False, allow_unicode=True)

@@ -30,6 +30,25 @@ Running log of hard-won facts from getting this setup working. Newest at top.
 - `mcp_servers: {}` — the remote `tinyfish` MCP blocked startup 60–120 s.
 - The disk skills snapshot is keyed by dir manifest (not the disabled set); it's filtered at
   prompt-build time, so a full-size snapshot file ≠ full skills in the prompt.
+- **Iter 8 (2026-11-27) — PROMPT SIZE is the #1 CPU lever (proven).** `hermes prompt-size
+  --platform cli --json` reports the fixed budget offline; the eval's first-turn
+  `prompt processing, n_tokens` in `serve.log` is the authoritative end-to-end number.
+  - **Baseline** (plugins=[omh,herdr-agent-state,orca-status,portfolio-manager],
+    cli=[connections,terminal,web]): first-turn **15,815 tok**, CLI tool schemas 8,922 B (6 tools).
+  - **Lean A — `plugins.enabled: []`**: system 7,748→6,046 B, schemas 8,922→6,848 B.
+    (portfolio-manager alone = ~40 tools; orca-status/herdr-agent-state add prompt blocks.)
+  - **Lean B — `platform_toolsets.cli: [terminal]`** (drop connections=3 tools/4.6 KB + web=2/1.9 KB;
+    disk=df, selfh=curl, both terminal-only): schemas **4,612 B (4 tools)**, first-turn **4,175 tok (-74%)**.
+  - **Eval (warm cache): disk PASS 39 s (was 58), selfh PASS 35 s (was 41) — 2/2, faster.**
+    (Cold first run disk 238 s = one-time 4,175-tok prefill; not a regression.)
+  - **KEPT.** omh's residual 3-tool/2.2 KB block left (user relies on omh; tiny vs 74% win).
+    Repro: `config/lean-config.yaml`, applied by `setup.sh` (`wire_hermes`).
+  - **Gotcha:** the eval's `--pause-gateway` does a plain `gateway stop`, which BLOCKS if the
+    gateway has live sessions → gateway keeps running and steals the single llama slot → both
+    tasks hit 600 s over-budget. Fix: `hermes gateway stop --yes` first (interrupts sessions),
+    then run the eval WITHOUT `--pause-gateway` (or ensure no live sessions). The separate
+    `--profile coder` gateway uses a cloud model (glm-5.1), not :8080, so it doesn't contend.
+  - Backup: `~/.hermes/config.yaml.bak.promptshrink-20261127_032953` (restore with `cp`).
 
 ## Reasoning-model gotchas
 - LFM3-hermes is a **reasoning model**: it fills `reasoning_content` and may emit an empty

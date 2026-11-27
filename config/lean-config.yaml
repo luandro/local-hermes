@@ -1,0 +1,29 @@
+# Lean Hermes config for local-hermes (CPU prompt-size minimization)
+#
+# On a CPU-only box, PROMPT SIZE is the dominant wall-time lever (a 21k-token
+# tool prompt caused 15–18 min/round in the pi benchmark). Tool schemas dominate
+# the prompt; `portfolio-manager` alone registers ~40 tools. The eval path
+# (disk = `df`, selfh = `curl` via terminal) needs ONLY the `terminal` toolset.
+#
+# Merge these keys into ~/.hermes/config.yaml (setup.sh does this automatically).
+# Measured on the ThinkPad (LFM3-1.7B Q4_K_M): first-turn prompt 15,815 → 4,175
+# tokens (-74%); warm-cache eval disk 58s→39s, selfh 41s→35s, both PASS.
+
+# CLI only needs `terminal` for the eval. Drop `connections` (3 tools, ~4.6 KB)
+# and `web` (2 tools, ~1.9 KB) from the CLI path. Telegram keeps file+web+terminal
+# (the real chat path is more capable; it is not on the latency-critical eval).
+platform_toolsets:
+  cli:
+    - terminal
+  telegram:
+    - terminal
+    - file
+    - web
+
+# No plugins. portfolio-manager / orca-status / herdr-agent-state inject tool
+# schemas + system-prompt blocks that bloat the prompt for no eval benefit.
+plugins:
+  enabled: []
+
+# Keep tool_search OFF for small tool sets (it adds rounds + prompt). This is the
+# default; do not enable `tool_search` on a lean CLI toolset.

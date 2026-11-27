@@ -25,6 +25,7 @@ hermes chat -q "oi"
 | Path | Purpose |
 |---|---|
 | `setup.sh` | Full bootstrap (deps → llama.cpp → models → STT → Hermes config). |
+| `config/lean-config.yaml` | Lean Hermes config (minimal toolsets/plugins) for CPU prompt-size wins. |
 | `serve.sh` | Adaptive llama.cpp launcher (CPU/GPU, x64/ARM/macOS). |
 | `eval/run_eval.py`, `eval/prompts.jsonl` | Small text eval (model/agent/telegram modes). |
 | `stt/transcribe.sh` | Local pt-BR STT wrapper (Parakeet ONNX, Hermes `local_command`). |
@@ -62,6 +63,12 @@ CPU-only ~20–25 tok/s prompt, ~5 tok/s gen. Single-round tool tasks ≈ 150 s;
 multi-round tasks need free RAM (swap thrash tanks pp to ~5 tok/s). Key wins are in
 `LEARNINGS.md` (hybrid-checkpoint cache fix, thread split, reasoning budget). Hermes
 requires ≥64k model context.
+
+**Prompt size is the dominant CPU lever.** Tool schemas dominate the prompt; trim
+toolsets/plugins to the minimum a task needs. `config/lean-config.yaml` is the
+winning lean config (CLI = `terminal` only, `plugins.enabled: []`): first-turn
+prompt **15,815 → 4,175 tokens (-74%)**, warm-cache eval disk 58→39 s, selfh
+41→35 s, both PASS. `setup.sh` applies it automatically.
 
 ## Roadmap / contributing
 See `LEARNINGS.md` → "PENDING improvements" for the next experiments (LoRA merge,

@@ -90,6 +90,19 @@ using a tight **eval → plan → dev → eval** loop.
   Hermes prompt-time, llama pp/spec. Key: quant weights & BLAS aren't the CPU lever at 1.7B;
   prompt length / tool count / rounds / caching are; `--cache-reuse` is a no-op on LFM3's hybrid
   layers; context reduction blocked by Hermes' 64k guard (override ignored on this build).
+- **Iter 8 — prompt-size minimization (2026-11-27, THIS subagent).** The pi benchmark proved
+  prompt SIZE is the dominant CPU lever. Measured with `hermes prompt-size` + the eval's
+  first-turn `n_tokens` from `serve.log`. Baseline (plugins=[omh,herdr-agent-state,orca-status,
+  portfolio-manager], cli=[connections,terminal,web]): first-turn prompt **15,815 tok**, CLI tool
+  schemas 8,922 B (6 tools). A/B (one change class at a time):
+  - **A. `plugins.enabled: []`** → system 7,748→6,046 B, tool schemas 8,922→6,848 B.
+  - **B. `platform_toolsets.cli: [terminal]`** (drop connections+web; eval needs only terminal)
+    → CLI tool schemas **4,612 B (4 tools)**, first-turn prompt **4,175 tok (-74%)**.
+  - **Result (warm cache): disk PASS 39 s (was 58), selfh PASS 35 s (was 41), 2/2.**
+    Cold-cache first run disk 238 s (4,175-tok prefill at ~20 tok/s, no cache reuse) — a
+    one-time artifact, not a regression. **KEPT.** omh's 3-tool/2.2 KB block left in place
+    (user relies on omh; small vs the 74% win). Repro: `config/lean-config.yaml`, applied by
+    `setup.sh`. Backup: `~/.hermes/config.yaml.bak.promptshrink-20261127_032953`.
 
 ## Codex consultation (gpt-6.2-sol, low, read-only) — folded in
 Verdict: useful smoke test, insufficient acceptance test. Blockers adopted:
