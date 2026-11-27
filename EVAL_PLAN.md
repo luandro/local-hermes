@@ -260,3 +260,14 @@ Plan v2 (Codex-debated) ranks this #1: no further A/B is trustworthy without it.
   adversarial cases are regression tests -> None. Full suite ALL PASS. Live e2e pending reboot.
 - Process note: always consult codex (gpt-6.2-sol) for plan+review this session; two seniors only
   on complex/high-risk tasks (per user). seniors skill updated.
+
+## R1.5 — TF-IDF/LogReg shadow veto (in progress)
+- Plan (codex): classifier is a VETO on W1-approved requests (never adds interceptions) —
+  safe direction. Shadow offline first. sklearn in a pinned venv, 4 group-disjoint splits,
+  Clopper-Pearson gate (>=149 unsafe examples, >=183/lang; P(unsafe-intercept) upper bound
+  <=2%; >=95% accuracy beating W1).
+- Commit 1 (this): eval/r15_eval.py (stdlib-only veto logic + data validator + score_rows
+  with injected predict) + eval/test_r15_eval.py (17 tests OK) + eval/r15_cases.jsonl seed.
+  No probes, no model needed. Found a real W1 coverage gap: "quanto espaço livre?" (no verb)
+  -> None (R1.5 is meant to recover these).
+- Next: build the full labelled corpus, eval/r15_train.py, lock, statistical gate.
