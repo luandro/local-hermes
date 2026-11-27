@@ -251,3 +251,12 @@ Plan v2 (Codex-debated) ranks this #1: no further A/B is trustworthy without it.
 - Plugin enabled in live config (backup taken); e2e `hermes -z` blocked by host swap wall
   (swap 19G/19G full). Re-run on idle host: readonly → api_calls=0; "clean it up" → api_calls>0.
 - Next: R1 rules/BM25 baseline; E10 Laya only if E00 traces prove an ambiguous slice rules miss.
+
+## W1.2 — senior-review fixes (codex gpt-6.2-sol, SHIP after 6 rounds)
+- Rewrote the partial-intent classifier to a strict whole-request allowlist (anchored fullmatch
+  + (family,regex) tuples) after codex found the substring-admission blocker. Per-probe dispatch
+  (df/free/uptime/docker only as requested) + output validation (df 6-fields+mount '/', memory
+  exact Mem: all size-like, docker SIZE column, uptime 3 numeric loads). All codex blocker +
+  adversarial cases are regression tests -> None. Full suite ALL PASS. Live e2e pending reboot.
+- Process note: always consult codex (gpt-6.2-sol) for plan+review this session; two seniors only
+  on complex/high-risk tasks (per user). seniors skill updated.
