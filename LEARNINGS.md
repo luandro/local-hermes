@@ -90,12 +90,22 @@ Running log of hard-won facts from getting this setup working. Newest at top.
 
 ## PENDING improvements (discovered, not yet applied)
 1. **Free RAM / mlock** — swap full is the current wall (pp 5 tok/s). Close apps or raise ulimit -l.
+   **Gemini audit root cause:** zram0 (16G, prio 1000) + swapfile (4G) coexist = LRU inversion
+   (Chris Down, Mar 2026). Fix: drop zram, use zswap (zstd, pool 25%) + swapfile, `vm.page-cluster=0`.
 2. **Merge LoRA → GGUF** (drop runtime --lora cache contamination) — needs ~7 GB disk.
 3. **Eval-only 2-request wrapper** (tool_choice required→none) to guarantee 1 round for selfh.
 4. **GGML_NATIVE=ON, BLAS=OFF** build (llamafile SGEMM beat OpenBLAS ~30% pp in community tests).
 5. **Q4_0 vs Q4_K_M** A/B after LoRA merge (Q4_0 CPU_REPACK can be faster; validate JSON fidelity).
-6. **Vulkan on UHD 620** controlled test (mixed reports; PP up to 1.8× or regression).
-7. **hermes-vcc-engine** plugin (instant compression, no LLM call) for long sessions.
+6. **Vulkan on UHD 620** controlled test — audit says DESCARTAR (UHD620 offload regressed to 1.9–3.9 tok/s).
+7. **hermes-vcc-engine / llmslim** plugin (instant compression, no LLM call) for long sessions.
+8. **`--load-mode none` + THP + systemd MemoryMin=2.5G** — audit: file mmap bypasses THP → ~30% pp loss.
+9. **Spec-decode OFF A/B** — audit math says n-gram hurts on CPU (pp_batch/tg only 1.5–2.5×). [subagent in progress]
+10. **Benchmark `harness-hub/LFM3-1.7B-pi-GGUF`** (pi LoRA, RL-trained in the `pi` agent, "37% fewer
+    tool calls") vs hermes LoRA → **separate repo `~/Dev/AI/local-pi`**. Directly targets round count.
+
+## DONE
+- **Hermes upgraded v0.14.0 → v0.23.4** (2026-11-26). Single gateway, ~1,570 fewer prompt tok/call,
+  skills 58→44, browser_*→browser_exec, #46201 fixed. (Audit item P1 complete.)
 
 ## Research findings (subagents → research/*.md)
 - **Quant weights are NOT the CPU speed lever at 1–3B** (memory-bandwidth-bound). Attack prompt
