@@ -113,6 +113,14 @@ using a tight **eval → plan → dev → eval** loop.
   - **KEPT spec OFF.** Faster on the substantial task (disk −19 s), equal-within-noise on the trivial
     one; pp/tg identical within noise. Audit confirmed (neutral-to-better on a 1.7B). Full table in
     LEARNINGS.md "Spec-decode A/B".
+- **Iter 10 — load-mode mmap vs none / THP A/B (2026-11-27, THIS subagent).** Tested the Gemini audit's
+  "THP vs mmap" claim (file mmap → 4 KiB pages → ~30% pp loss; `none` → anon/THP fixes it). Same build,
+  same eval (`--mode agent --only disk,selfh --budget 600 --timeout 600`), gateway stopped, arms sequential.
+  THP state `[madvise]`. **mmap:** disk FAIL 600 s (12,209-tok prompt), selfh PASS 395.6 s, pp 22.85 tok/s
+  (1st turn), AnonHugePages 0. **none:** disk FAIL 600 s, selfh FAIL 600 s (0/2), pp ~21–25 tok/s,
+  AnonHugePages **0 kB** throughout (THP never engaged — no madvise in llama.cpp). **REVERTED to mmap.**
+  `none` is not faster (pp identical within noise), THP inert here, and adds swap-eviction risk for no gain.
+  Full table in LEARNINGS.md "Load-mode A/B".
 
 ## Codex consultation (gpt-6.2-sol, low, read-only) — folded in
 Verdict: useful smoke test, insufficient acceptance test. Blockers adopted:

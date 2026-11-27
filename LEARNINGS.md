@@ -2,6 +2,34 @@
 
 Running log of hard-won facts from getting this setup working. Newest at top.
 
+## Load-mode A/B — mmap vs none / THP (2026-11-27, THIS subagent)
+Audit (`research/gemini-audit-lfm3-1.7b-thinkpad-cpu.md`, "Proteção via cgroup v2 e o Conflito
+THP vs. mmap") claims file-backed `mmap` bypasses Transparent Hugepages → 4 KiB pages → TLB misses
+→ ~30% prefill loss, and that `--load-mode none` (anon memory, THP-eligible) fixes it. **Disproven
+on this box — REVERTED to mmap.** The THP fix is inert here because THP is `[madvise]` and
+llama.cpp never madvises the weight buffer, so `none` gets 4 KiB pages too.
+- **Method:** same build, same eval (`--mode agent --only disk,selfh --budget 600 --timeout 600`),
+  gateway stopped (no `--pause-gateway`), single server, arms sequential. THP state recorded:
+  `always [madvise] never` (so anon allocs only get 2 MiB pages if the process madvises — it doesn't).
+  `AnonHugePages` read from `/proc/<pid>/smaps_rollup` on both arms.
+- **Results:**
+
+  | arm | disk | selfh | pp tok/s (1st turn / disk prefill) | tg tok/s | AnonHugePages | PASS |
+  |---|---|---|---|---|---|---|
+  | mmap (current) | FAIL 600 s (12,209-tok prompt) | **PASS 395.6 s** | 22.85 / 21.2 | 12.65 / 6.8 | **0 kB** | 1/2 |
+  | none | FAIL 600 s (~20k-tok prompt) | FAIL 600 s | ~21–25 / 11.98 | 11.59 | **0 kB** | 0/2 |
+
+- **Verdict:** `--load-mode none` did **NOT** engage THP (`AnonHugePages` stayed **0 kB** for the
+  whole run, RSS ~2.2–2.4 GiB) — with THP=`[madvise]` and no `madvise(MADV_HUGEPAGE)` in llama.cpp,
+  anon weights are still 4 KiB pages, so there is no TLB win to be had. pp was identical within
+  noise (both ~21–23 tok/s on the 3,131-tok first turn / disk prefill). `none` scored **worse**
+  (0/2 vs 1/2; selfh flipped PASS→FAIL) and adds swap-eviction risk (audit's own caveat #26110)
+  for zero benefit. **REVERTED** (`git checkout serve.sh`). The audit's ~30% mmap penalty is a
+  generic llama.cpp claim that does not reproduce on this ThinkPad; the real lever remains prompt
+  size (the disk task ballooned to 12–20k tokens on both arms — the known multi-round issue, not
+  load-mode). To actually test the audit's THP hypothesis you'd need THP=`always` (root) or a
+  `madvise` patch — out of scope here. MemoryMin=2.5G (root) also not applied, per instructions.
+
 ## Spec-decode A/B — n-gram spec OFF (2026-11-27, THIS subagent)
 Audit (`research/gemini-audit-lfm3-1.7b-thinkpad-cpu.md`, "Descodificação Especulativa") argues
 n-gram spec should be OFF by default on this CPU: pp_batch/tg ratio is only 1.5–2.5×, so n-gram
@@ -136,7 +164,10 @@ only helps very repetitive JSON and hurts free dialogue. **Proven with the eval 
 5. **Q4_0 vs Q4_K_M** A/B after LoRA merge (Q4_0 CPU_REPACK can be faster; validate JSON fidelity).
 6. **Vulkan on UHD 620** controlled test — audit says DESCARTAR (UHD620 offload regressed to 1.9–3.9 tok/s).
 7. **hermes-vcc-engine / llmslim** plugin (instant compression, no LLM call) for long sessions.
-8. **`--load-mode none` + THP + systemd MemoryMin=2.5G** — audit: file mmap bypasses THP → ~30% pp loss.
+8. ~~**`--load-mode none` + THP + systemd MemoryMin=2.5G**~~ **DONE (2026-11-27) — REVERTED to mmap.**
+   Audit: file mmap bypasses THP → ~30% pp loss. Disproven here: THP=`[madvise]` + no llama.cpp
+   madvise ⇒ `none` still 4 KiB pages (`AnonHugePages`=0 both arms), pp identical, `none` 0/2 vs
+   mmap 1/2. Needs THP=`always` (root) or a madvise patch to test properly. See "Load-mode A/B".
 9. ~~**Spec-decode OFF A/B**~~ **DONE (2026-11-27) — KEPT spec OFF.** Audit math (n-gram hurts on
    CPU, pp_batch/tg only 1.5–2.5×) confirmed: spec-OFF disk 181 s vs spec-ON 200 s, selfh 39 vs 34 s
    (trivial, within noise), both 2/2 PASS, pp/tg identical within noise. See "Spec-decode A/B" above.
