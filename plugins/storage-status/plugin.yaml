@@ -1,0 +1,6 @@
+name: storage-status
+version: 0.1.0
+description: "Deterministic pre-LLM route for read-only disk-space questions (PT-BR/EN). Answers unambiguous 'how much space is free' requests with a verified df/du scan and zero model calls; falls through to Hermes on any write/conditional/ambiguous intent. Read-only — never deletes, writes, or installs."
+author: "local-hermes"
+provides_hooks:
+  - pre_llm_call

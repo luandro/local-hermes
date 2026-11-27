@@ -445,3 +445,27 @@ within-run A/B directions are trustworthy** (large effect sizes, single model lo
   depressed until the host is idle / zswap is active (reboot). Directions + instrumentation are valid.
 - **Files:** `eval/run_eval.py` (call_agent usage-file, memtrace wrap, swapin col, MEMPRESSURE summary,
   `--no-memtrace`), `eval/memtrace.py` (new). No model/serve/config changes.
+
+## W1 — typed storage workflow + pre-LLM rules route (2026-11-27)
+- **What:** `plugins/storage-status/` — a `pre_llm_call` plugin that answers *unambiguous
+  read-only* disk-space questions (PT-BR/EN) with a deterministic `df`+`du` scan and **zero
+  model calls** (returns `{"action":"block","message":...}` → turn ends before inference;
+  `PRE_LLM_BLOCK_EXIT_REASON`). Sidesteps the tool_choice bug (#741) entirely — no proxy.
+- **Partial-intent guard (the plan's biggest risk, per Codex):** `classify_intent` blocks ONLY
+  when the request has a read signal AND no write/conditional/ambiguous marker. "check disk and
+  clean it up if needed" → falls through to Hermes (the action verb + conditional disqualify).
+  Conservative by design: when in doubt, no block, model keeps full agency.
+- **Read-only:** scan runs `df -h /` + bounded `du -d 1 .` (argv lists, no shell interpolation,
+  8s/6s timeouts). Never deletes/writes/installs. Fail-open: any error → {} → normal Hermes.
+- **Tests:** `plugins/storage-status/test_storage_status.py` — ALL PASS (read-only blocks,
+  write/conditional/ambiguous/unrelated all fall through, scan read-only, follow-up turns pass
+  through). Validates the partial-intent guard directly.
+- **Live validation BLOCKED by host memory wall:** plugin is discovered + `enabled` in
+  `~/.hermes/config.yaml` (backup `config.yaml.bak.w1-*`), but the one-shot `hermes -z` e2e test
+  could not complete — swap 19G/19G full, ~4GiB free, hermes startup crawls (>4min). Re-run the
+  e2e on an idle host / after zswap reboot:
+    `hermes gateway stop --yes`
+    `hermes -z "How much free disk space is there?" --usage-file /tmp/u.json`  # expect api_calls=0
+    `hermes -z "check disk and clean it up" --usage-file /tmp/u2.json`          # expect api_calls>0
+- **Reversible:** remove `storage-status` from `plugins.enabled` + `rm ~/.hermes/plugins/storage-status`
+  symlink to disable. Config backup taken. No model/serve changes.
