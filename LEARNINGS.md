@@ -2,6 +2,39 @@
 
 Running log of hard-won facts from getting this setup working. Newest at top.
 
+## LoRA merge A/B — MERGED model ADOPTED (2026-11-27, THIS subagent)
+The Gemini audit claims runtime `--lora` contaminates the prefix/KV cache and skips fast
+kernels. **Confirmed and fixed: merged the LoRA into a single Q4_K_M GGUF and dropped
+`--lora`. ADOPTED.** This is NOT a wash — it is a real ~2.2× prefill win on this CPU.
+- **Root cause proven:** the runtime-LoRA server logged **136 `cannot use buft 'CPU_REPACK',
+  fallback to CPU` warnings** (every LoRA-adapted tensor falls back to the slow CPU path);
+  the merged server logs **0**. Same build, same flags, same eval.
+- **Method:** `PeftModel.from_pretrained(base, adapter).merge_and_unload()` in BF16
+  (transformers+peft+torch cpu; peak ~6.6 GiB avail, no OOM) → `convert_hf_to_gguf.py
+  --outtype bf16` → `llama-imatrix` (calib = terminal/JSON/pt+en, 65 lines ~1.5k tok) →
+  `llama-quantize --imatrix … Q4_K_M` (1.10 GB). `llama-imatrix` was already built at
+  `build/bin/llama-imatrix`. Eval: `--mode agent --only disk,selfh --budget 600`, gateway
+  stopped, single server, arms sequential, cold-cache first turn.
+- **Results (cold first turn):**
+
+  | arm | disk | selfh | 1st-turn pp tok/s | LoRA fallback warns | PASS |
+  |---|---|---|---|---|---|
+  | runtime --lora (baseline) | PASS 217.8 s | PASS 41.8 s | **18.84** | **136** | 2/2 |
+  | merged (no --lora) | **PASS 136.9 s** | **PASS 15.9 s** | **41.03** | **0** | 2/2 |
+
+- **Cache reuse NOT worse:** both arms show clean LCP slot reuse (`f_sim_best` 0.97–1.00),
+  turn 1 = 3,115 tok cold, later turns 39–115 tok, **no `forcing full prompt re-processing`**
+  on either arm. The hybrid-checkpoint cache reuse that worked WITH `--lora` still works
+  WITHOUT it — the merge removes the fallback penalty without touching caching.
+- **Verdict: ADOPT.** Equal-or-better PASS (2/2 both), ~2.2× faster prefill (18.8→41.0 tok/s),
+  faster wall on both tasks, cache reuse equal. serve.sh now prefers
+  `LFM3-1.7B-hermes-merged-Q4_K_M.gguf` and drops `--lora`; falls back to base+runtime-LoRA
+  only if the merged GGUF is absent (`BASE_OVERRIDE=1` forces the old path). Merged GGUF kept
+  at `~/models/lfm3-hermes/` (gitignored, not committed). Repro artifacts in
+  `~/models/merge/` (do_merge.py, calib.txt, imatrix.dat). Gotcha: after a `gateway stop` that
+  ends in `failed`, `hermes -z` can't reach the gateway — `hermes gateway start` then
+  `stop --yes` to get a clean `inactive` state before the eval.
+
 ## Disk-eval flake — ROOT CAUSE + fix (2026-11-27, THIS subagent)
 The `disk` eval intermittently ballooned to 12–20k tokens over multiple rounds and FAILED at
 600 s, while warm single-round runs PASS in ~17–48 s. **Root cause: the `disk` prompt was
@@ -184,7 +217,9 @@ only helps very repetitive JSON and hurts free dialogue. **Proven with the eval 
 1. **Free RAM / mlock** — swap full is the current wall (pp 5 tok/s). Close apps or raise ulimit -l.
    **Gemini audit root cause:** zram0 (16G, prio 1000) + swapfile (4G) coexist = LRU inversion
    (Chris Down, Mar 2026). Fix: drop zram, use zswap (zstd, pool 25%) + swapfile, `vm.page-cluster=0`.
-2. **Merge LoRA → GGUF** (drop runtime --lora cache contamination) — needs ~7 GB disk.
+2. ~~**Merge LoRA → GGUF** (drop runtime --lora cache contamination)~~ **DONE (2026-11-27) —
+   ADOPTED.** Merged Q4_K_M, dropped `--lora`: 136→0 CPU_REPACK fallback warnings, prefill
+   18.8→41.0 tok/s (~2.2×), 2/2 PASS, cache reuse unchanged. See "LoRA merge A/B" above.
 3. **Eval-only 2-request wrapper** (tool_choice required→none) to guarantee 1 round for selfh.
 4. **GGML_NATIVE=ON, BLAS=OFF** build (llamafile SGEMM beat OpenBLAS ~30% pp in community tests).
 5. **Q4_0 vs Q4_K_M** A/B after LoRA merge (Q4_0 CPU_REPACK can be faster; validate JSON fidelity).

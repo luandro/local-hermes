@@ -9,14 +9,24 @@ CTX="${CTX:-65536}"
 ALIAS="${ALIAS:-lfm3-harbor-hermes}"
 
 # --- locate models ---
+# Prefer the merged (LoRA baked in) Q4_K_M GGUF: no runtime --lora, no CPU_REPACK
+# fallback (136 warnings on the runtime-LoRA path), ~2.2x faster prefill on CPU.
+# Fall back to base + runtime LoRA if the merged GGUF is not present.
 MODEL_DIR="${HERMES_MODELS_DIR:-}"
 if [ -z "$MODEL_DIR" ]; then
   for d in "$DIR/models" "$HOME/models/lfm3-hermes"; do
     [ -f "$d/LFM3-1.7B-Q4_K_M.gguf" ] && MODEL_DIR="$d" && break
   done
 fi
+MERGED="$MODEL_DIR/LFM3-1.7B-hermes-merged-Q4_K_M.gguf"
 BASE="${BASE:-$MODEL_DIR/LFM3-1.7B-Q4_K_M.gguf}"
 LORA="${LORA:-$MODEL_DIR/LFM3-1.7B-harbor-hermes-lora-F16.gguf}"
+LORA_ARGS=()
+if [ -z "${BASE_OVERRIDE:-}" ] && [ -f "$MERGED" ]; then
+  BASE="$MERGED"                            # merged: single GGUF, LoRA baked in
+else
+  LORA_ARGS=(--lora "$LORA")                # fallback: runtime LoRA
+fi
 
 # --- locate llama-server ---
 find_bin() {
@@ -34,7 +44,9 @@ BIN="${LLAMA_SERVER:-$(find_bin || true)}"
 if [ -d "$BIN" ]; then BIN="$BIN/llama-server"; fi
 [ -x "$BIN" ] || { echo "ERROR: llama-server not found. Run ./setup.sh first." >&2; exit 1; }
 [ -f "$BASE" ] || { echo "ERROR: base model not found: $BASE (run ./setup.sh)" >&2; exit 1; }
-[ -f "$LORA" ] || { echo "ERROR: LoRA not found: $LORA (run ./setup.sh)" >&2; exit 1; }
+if [ ${#LORA_ARGS[@]} -gt 0 ]; then
+  [ -f "$LORA" ] || { echo "ERROR: LoRA not found: $LORA (run ./setup.sh)" >&2; exit 1; }
+fi
 
 # --- platform flags ---
 OS="$(uname -s)"; ARCH="$(uname -m)"
@@ -51,9 +63,9 @@ else
 fi
 
 echo "platform=$OS/$ARCH threads=$NPROC bin=$BIN"
-echo "model=$BASE"
+echo "model=$BASE lora_args=[${LORA_ARGS[*]:-none}]"
 exec "$BIN" \
-  -m "$BASE" --lora "$LORA" \
+  -m "$BASE" "${LORA_ARGS[@]}" \
   -c "$CTX" --host 127.0.0.1 --port "$PORT" --alias "$ALIAS" \
   "${GPU_ARGS[@]}" "${THREAD_ARGS[@]}" -fa on "${KV_ARGS[@]}" \
   --load-mode mmap \

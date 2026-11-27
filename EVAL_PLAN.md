@@ -64,6 +64,20 @@ using a tight **eval → plan → dev → eval** loop.
 - A real Telegram "oi" returns a reply in < 5 min.
 
 ## Iteration log
+- **Iter 12 — LoRA merge A/B: MERGED model ADOPTED (2026-11-27, THIS subagent).** Tested the
+  Gemini audit's claim that runtime `--lora` contaminates prefix/KV cache and skips fast kernels.
+  Merged the PEFT LoRA (`harness-hub/LFM3-1.7B-hermes`) into base `LiquidAI/LFM3-1.7B` in BF16
+  (`merge_and_unload`), converted to BF16 GGUF, built an imatrix (`llama-imatrix`, calib =
+  terminal/JSON/pt+en), and quantized to Q4_K_M (1.10 GB). Same build, same eval
+  (`--mode agent --only disk,selfh --budget 600 --timeout 600`), gateway stopped, arms sequential.
+  - **runtime --lora (baseline):** disk PASS 217.8 s, selfh PASS 41.8 s, 1st-turn pp **18.84 tok/s**,
+    **136** `CPU_REPACK fallback` warnings, 2/2.
+  - **merged (no --lora):** disk **PASS 136.9 s**, selfh **PASS 15.9 s**, 1st-turn pp **41.03 tok/s**,
+    **0** fallback warnings, 2/2.
+  - **Cache reuse equal:** both arms clean LCP reuse (f_sim 0.97–1.00), turn1 3,115 tok cold,
+    later 39–115 tok, no `forcing full re-processing`. **ADOPTED** — equal PASS, ~2.2× faster
+    prefill, faster wall, cache unchanged. serve.sh prefers the merged GGUF, drops `--lora`
+    (fallback to base+LoRA if merged absent). Full table in LEARNINGS.md "LoRA merge A/B".
 - **Iter 11 — disk-eval flake root cause + fix (2026-11-27, THIS subagent).** The `disk` eval
   intermittently ballooned to 12–20k tokens over multiple rounds and FAILED at 600 s, while warm
   single-round runs PASS in ~17–48 s. **Root cause: the `disk` prompt was open-ended** ("Check disk
