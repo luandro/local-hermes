@@ -37,36 +37,55 @@ logger = logging.getLogger(__name__)
 # carries NO write/conditional intent. We are deliberately conservative: when in
 # doubt, return None → fall through to Hermes.
 
-# Verbs/nouns that indicate the user wants to SEE storage state.
+# Verbs/nouns that indicate the user wants to SEE storage / memory / status state.
 _READ_SIGNALS = (
-    # EN
+    # EN — disk/storage
     "disk space", "disk usage", "free space", "free disk", "how much space",
     "how much free", "how much disk", "how much storage", "storage left",
     "storage remaining", "remaining space", "space left", "df ", "disk free",
     "filesystem", "file system", "partition usage", "disk full", "is the disk full",
+    "docker system df", "docker disk", "docker usage", "docker space",
+    # EN — memory / load / uptime / status (require a quantity/availability word so
+    # "program usage" / "memory usage of the app" do NOT false-positive)
+    "memory left", "free memory", "ram left", "how much memory", "how much ram",
+    "memory free", "ram free", "available memory", "available ram",
+    "system status", "system load", "load average", "uptime", "free -h",
+    "running processes", "memory info", "ram info",
     # PT-BR
     "espaço", "espaco", "espaço livre", "espaco livre", "disco", "partição",
     "particao", "armazenamento", "quanto espaço", "quanto espaco", "livre no disco",
     "uso do disco", "consumo do disco", "disco cheio", "está cheio", "esta cheio",
+    # PT-BR — memória / status
+    "memória", "memoria", "memória livre", "memoria livre", "quanto de memória",
+    "quanto de memoria", "status do sistema", "carga do sistema", "ligado há",
+    "no ar há", "processos",
 )
 
 # Any of these => NOT a pure read-only request => fall through (never block).
 # This is the partial-intent guard: a conditional or an action verb means the model
-# must stay in the loop.
+# must stay in the loop. NOTE: we do NOT list the bare word "docker"/"container" —
+# "docker system df" is read-only and must route here; only docker *mutations* below
+# disqualify.
 _WRITE_OR_CONDITIONAL = (
     # action verbs (EN)
     "clean", "cleanup", "clean up", "delete", "remove", "rm ", "purge", "free up",
     "make space", "clear", "wipe", "install", "uninstall", "move", "mv ", "resize",
     "format", "mkfs", "truncate", "archive", "compress", "deduplicate", "dedupe",
-    "prune", "vacuum", "docker ", "container", "image", "volume",
+    "prune", "vacuum", "drop caches", "drop cache", "restart", "reboot", "shutdown",
+    "kill", "stop ", "start ", "enable", "disable", "reload", "refresh",
+    # docker *mutations* (read-only `docker system df` / `docker ps` stay allowed)
+    "docker prune", "docker rm", "docker rmi", "docker stop", "docker kill",
+    "docker run", "docker pull", "docker compose up", "docker compose down",
+    "container prune", "image prune", "volume prune",
     # action verbs (PT-BR)
     "limpar", "limpeza", "apagar", "apague", "remover", "remova", "deletar",
     "liberar", "libere", "instalar", "instale", "desinstalar", "mover", "mova",
-    "formatar", "compactar", "comprimir", "prune", "podar",
+    "formatar", "compactar", "comprimir", "prune", "podar", "reiniciar",
+    "reinicie", "desligar", "parar", "matar", "limpar cache",
     # conditionals / scope words that imply follow-on action or ambiguity
     " if ", " if", "if needed", "if necessary", "caso", "se precisar",
     "se necessário", "se necessario", "e depois", "then ", "depois",
-    "and clean", "e limpar", "e remover", "e apagar",
+    "and clean", "e limpar", "e remover", "e apagar", "and restart", "e reiniciar",
 )
 
 # Ambiguity / multi-intent markers => fall through. NOTE: a bare "?" is NOT
@@ -112,9 +131,11 @@ def _run(argv: list[str], timeout: float = 8.0) -> Optional[str]:
 
 
 def scan_storage() -> Optional[str]:
-    """Return a compact, bounded, human-readable storage summary, or None on failure.
+    """Return a compact, bounded, human-readable storage+status summary, or None.
 
-    Read-only: df + a bounded du of the CWD. No writes, no deletes, no network.
+    Read-only: df + bounded du of the CWD + free + uptime + docker system df.
+    Every sub-command is optional and fail-open (a failure just omits that line).
+    No writes, no deletes, no network, no docker engine mutations.
     """
     df = _run(["df", "-h", "/"])
     if not df:
@@ -131,6 +152,7 @@ def scan_storage() -> Optional[str]:
     size, used, avail = parts[1], parts[2], parts[3]
     summary = (f"Root filesystem `/` is {use_pct} full "
                f"({used} used of {size}, {avail} available).")
+
     # Bounded du of the working dir (top-level only, capped) — helps "what's big" but
     # stays read-only and fast. Skipped silently if it fails.
     du = _run(["du", "-h", "-d", "1", "--max-depth=1", "."], timeout=6.0)
@@ -141,6 +163,29 @@ def scan_storage() -> Optional[str]:
             summary += " Largest items in the current directory:\n" + "\n".join(
                 "  " + l for l in top
             )
+
+    # Memory (free -h): read-only. The "Mem:"/"Memória:" line is the useful one.
+    # Locale-robust: match any line whose first token starts with "Mem".
+    free = _run(["free", "-h"], timeout=4.0)
+    if free:
+        for ln in free.splitlines():
+            tok = ln.split(None, 1)[0] if ln.split() else ""
+            if tok.startswith("Mem"):
+                summary += f" Memory: {ln[len(tok):].strip()}."
+                break
+
+    # Uptime/load (uptime): read-only.
+    up = _run(["uptime"], timeout=4.0)
+    if up:
+        summary += f" {up.strip()}"
+
+    # Docker disk usage (docker system df): read-only, no engine mutation. Only if
+    # docker is reachable; silently skipped otherwise (the common no-docker case).
+    ddf = _run(["docker", "system", "df"], timeout=6.0)
+    if ddf:
+        rows = [l for l in ddf.strip().splitlines() if l.strip()]
+        if len(rows) >= 2:
+            summary += " Docker disk usage:\n" + "\n".join("  " + l for l in rows[:6])
     return summary
 
 

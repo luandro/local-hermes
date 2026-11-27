@@ -34,6 +34,16 @@ for t in [
     "mostra o uso do disco",
     "what's the filesystem usage on /",
     "espaço em disco",
+    # new: memory / uptime / docker df (read-only)
+    "how much memory is free?",
+    "how much ram is left?",
+    "free memory",
+    "system status",
+    "uptime",
+    "docker system df",
+    "docker disk usage",
+    "status do sistema",
+    "quanto de memória livre?",
 ]:
     check(f"readonly: {t!r}", mod.classify_intent(t) == "storage_readonly")
 
@@ -46,6 +56,12 @@ for t in [
     "check disk then install nginx",
     "quanto espaço livre e depois apaga os temporários",
     "remove old docker images to free space",
+    # new traps: memory/status/docker mutations
+    "free memory and drop caches",
+    "system status and restart the service",
+    "docker system df and prune",
+    "status do sistema e reiniciar",
+    "how much memory and kill the process",
 ]:
     check(f"fallthrough: {t!r}", mod.classify_intent(t) is None)
 
@@ -58,7 +74,8 @@ for t in [
     check(f"ambiguous: {t!r}", mod.classify_intent(t) is None)
 
 print("== classify_intent: unrelated (fall through) ==")
-for t in ["what is the capital of Brazil?", "oi", "write a poem about disk"]:
+for t in ["what is the capital of Brazil?", "oi", "write a poem about disk",
+          "check program usage", "the program usage is high", "memory usage of the app"]:
     check(f"unrelated: {t!r}", mod.classify_intent(t) is None)
 
 print("== scan_storage: read-only, returns a summary ==")
@@ -70,8 +87,12 @@ check("scan does not delete (no 'rm'/'delete' in output)", s is None or "rm " no
 print("== _on_pre_llm_call: blocks readonly, passes through write ==")
 r1 = mod._on_pre_llm_call(user_message="how much free disk space?", is_first_turn=True)
 check("blocks readonly", r1.get("action") == "block" and "full" in r1.get("message", "").lower())
+r1b = mod._on_pre_llm_call(user_message="how much memory is free?", is_first_turn=True)
+check("blocks memory query", r1b.get("action") == "block")
 r2 = mod._on_pre_llm_call(user_message="check disk and clean it up", is_first_turn=True)
 check("falls through on write-intent", r2 == {})
+r2b = mod._on_pre_llm_call(user_message="docker system df and prune", is_first_turn=True)
+check("falls through on docker-prune intent", r2b == {})
 r3 = mod._on_pre_llm_call(user_message="how much free disk space?", is_first_turn=False)
 check("falls through on follow-up turn", r3 == {})
 

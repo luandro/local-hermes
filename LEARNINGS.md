@@ -469,3 +469,17 @@ within-run A/B directions are trustworthy** (large effect sizes, single model lo
     `hermes -z "check disk and clean it up" --usage-file /tmp/u2.json`          # expect api_calls>0
 - **Reversible:** remove `storage-status` from `plugins.enabled` + `rm ~/.hermes/plugins/storage-status`
   symlink to disable. Config backup taken. No model/serve changes.
+
+## W1.1 — extend storage-status: memory + uptime + docker system df (2026-11-27)
+- `scan_storage()` now bundles (all read-only, each fail-open/optional): `df -h /` + bounded
+  `du -d 1 .` + `free -h` (locale-robust "Mem" match) + `uptime` + `docker system df`.
+- Intent classifier extended: memory/uptime/system-status/docker-df read signals (PT-BR+EN);
+  docker *mutations* (prune/rm/stop/run/compose up) + "drop caches"/"restart" are traps → fall
+  through. Removed the over-broad "docker"/"container"/"image"/"volume" write markers (they
+  wrongly disqualified the read-only "docker system df").
+- **False-positive fix:** bare "ram usage"/"memory usage" matched "program usage"/"memory usage
+  of the app" → tightened to require a quantity/availability word ("free"/"left"/"how much").
+  Added those as negative tests.
+- Tests: ALL PASS (new memory/uptime/docker-df blocks + traps + false-positive guards).
+  Scan verified live: returns fs + du + Memory + uptime + Docker disk usage, all read-only.
+- Live e2e still blocked by host swap wall (reboot pending). Reversible via plugins.enabled.
