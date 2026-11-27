@@ -197,6 +197,24 @@ absolute numbers contention-depressed, only directions trustworthy):
   intermediates cleaned; repro artifacts kept. serve.sh unchanged; ik-build kept for future Q4_0/QAD.
   Full table in LEARNINGS.md "Q4_0 vs Q4_K_M A/B".
 
+## Iter 15 — round-gating (first-hop tool_choice:required): NOT VIABLE, REVERTED (2026-11-27, THIS subagent)
+Last lever: force exactly ONE tool call on hop 0 then answer, to cut rounds for ANY task.
+- **Native support:** Hermes v0.23.4 OpenAI-wire path still never sets `tool_choice` (#741 persists);
+  `tool_use_enforcement` is prompt-only; transports only emit `"auto"`. **llama-server DOES honour
+  `tool_choice` in the JSON body** (`common_chat_tool_choice_parse_oaicompat`), no CLI flag. → proxy
+  is the only way. Built `eval/tool_choice_proxy.py` (stateless first-hop detect, gate/passthrough).
+- **Multi-round A/B** ("largest file under ~/models, report size" = list→stat→answer): baseline
+  **518.7 s / 4 requests**, gated **232.3 s / 5 requests**, both correct. **Gating added a round,
+  didn't cut one** — the task needs 2 real tool calls regardless; the wall gap is cache warmth
+  (baseline cold 6,144-tok prefills vs gated warm 512-tok), not gating.
+- **Regression (disk+selfh, gate ON):** host swap-thrashed (20.5/20.5 GB, tg 0.1–0.2 t/s, other
+  apps), selfh crawled → stopped at budget. disk re-armed correctly; no gating failure seen but no
+  clean PASS. Moot — adopt gate (fewer rounds) already failed.
+- **Verdict: NOT ADOPTED / REVERTED.** Fails the reduce-rounds criterion, adds a failure mode
+  (required first call breaks prose-first tasks), speedup is a confound. Config restored (identical
+  to backup `~/.hermes/config.yaml.bak.roundgate-1795804833`), proxy stopped, server healthy direct.
+  Proxy kept in `eval/` as opt-in, not wired into serve.sh. Full table in LEARNINGS.md.
+
 ## Codex consultation (gpt-6.2-sol, low, read-only) — folded in
 Verdict: useful smoke test, insufficient acceptance test. Blockers adopted:
 1. **Test the Telegram path**, not just `hermes -z`/model — add a telegram probe that

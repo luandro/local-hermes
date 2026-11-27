@@ -2,6 +2,47 @@
 
 Running log of hard-won facts from getting this setup working. Newest at top.
 
+## Round-gating (first-hop `tool_choice:"required"`) — NOT VIABLE / NOT ADOPTED (2026-11-27, THIS subagent)
+Goal: force the model to make exactly ONE tool call on hop 0 then answer, to cut agent
+rounds (the multi-round wall-time killer) for ANY task. **Verdict: REVERTED — gating does not
+reduce rounds on a genuinely multi-step task, and the wall gain was a cache-warmth confound.**
+
+- **Native support:** Hermes v0.23.4's OpenAI-wire path (`_build_chat_completions_kwargs` →
+  `transport.build_kwargs`) **still never sets `tool_choice`** — bug #741 persists on the local
+  path. `agent.tool_use_enforcement` is **prompt-only** (system-prompt guidance, not a hard
+  constraint). Transports only ever emit `"auto"` (codex.py:801). No `tool_choice` /
+  first-hop-required config key exists. **llama-server DOES honour `tool_choice` in the request
+  body** (`common_chat_tool_choice_parse_oaicompat` in `libllama-common.so`; no `--tool-choice`
+  CLI flag, but the JSON field works). So a proxy is the only way to force first-hop-required.
+- **Proxy built:** `eval/tool_choice_proxy.py` (~110 lines, no secrets) — stateless first-hop
+  detection (first hop = no prior `role:tool` / assistant tool-call message), injects
+  `tool_choice:"required"` on hop 0, `"auto"` after; `--mode gate|passthrough`; hop logging.
+  Smoke-tested (curl + live `hermes -z`): correctly re-arms per task (fresh task's first hop →
+  `required`), passes all other fields untouched.
+- **Multi-round A/B** (task: "find largest regular file under ~/models, report size" — genuinely
+  needs list→stat→answer; same merged Q4_K_M, gateway stopped, sequential, through the proxy):
+
+  | arm | wall | model requests (hops) | result |
+  |---|---|---|---|
+  | baseline (passthrough) | **518.7 s** | **4** | correct (1.75 GB Q8_0) |
+  | gated (required hop 0) | 232.3 s | **5** | correct (same file) |
+
+  **Gating did NOT reduce rounds — it added one (5 vs 4).** The task needs two real tool calls
+  regardless of hop-0 forcing; `required` only guarantees the first call is a tool, which the
+  model already did. The 232 s vs 519 s wall gap is a **cache-warmth confound** (baseline ran
+  cold with 6,144-tok prefills; gated reused warm KV, 512-tok prefills) — not a gating effect.
+- **Regression (disk+selfh, gating ON):** could not complete cleanly — host swap-thrashed
+  (20,478/20,479 MB, tg collapsed to 0.1–0.2 t/s from other apps, not killable; same contention
+  caveat as the Q4_0 / thread-sweep iters). `disk` completed its hops under gate (re-arm correct);
+  `selfh` crawled under swap and was stopped at budget. No gating-induced failure observed, but no
+  clean PASS either — moot since the adopt gate (fewer rounds) already failed.
+- **Decision: NOT ADOPTED.** Round-gating fails the primary criterion (reduces rounds) on a
+  multi-step task, adds a failure mode (a required first call breaks any task whose hop 0 should
+  be prose), and the apparent speedup is cache warmth, not gating. Reverted: config base_url
+  restored to `localhost:8080` (verified identical to backup), proxy stopped, server left healthy
+  direct. Proxy kept in `eval/` as a documented, opt-in tool (not wired into serve.sh). Backup:
+  `~/.hermes/config.yaml.bak.roundgate-1795804833`.
+
 ## Q4_0 vs Q4_K_M A/B — Q4_0 fidelity-SAFE but NOT faster; KEEP Q4_K_M (2026-11-27, THIS subagent)
 The highest-value remaining lever: Q4_0 with CPU_REPACK (mainline `Q4_0_4_4`) and especially
 ik_llama's `Q4_0_R8` AVX2 fast path (community 8th-gen test showed +97% pp, but only on Q4_0).
