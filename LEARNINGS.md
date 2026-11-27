@@ -483,3 +483,27 @@ within-run A/B directions are trustworthy** (large effect sizes, single model lo
 - Tests: ALL PASS (new memory/uptime/docker-df blocks + traps + false-positive guards).
   Scan verified live: returns fs + du + Memory + uptime + Docker disk usage, all read-only.
 - Live e2e still blocked by host swap wall (reboot pending). Reversible via plugins.enabled.
+
+## W1.2 — senior-review blocker fixes (2026-11-27, codex gpt-6.2-sol)
+- **BLOCKER 1 (substring admission) FIXED:** replaced "one read substring + finite denylist"
+  with a strict whole-request allowlist. `classify_intent` now: normalize whitespace →
+  whole-request `_DISQ_RE` disqualifier scan → strip trailing `?` → reject empty →
+  `fullmatch` against anchored `_READONLY_PATTERNS` → return the probe family. Removed all
+  all-optional arms. Codex's counterexamples now ALL fall through (verified): "Check disk
+  space. Email me the numbers.", "...? Esvazie a lixeira.", "...? When it drops below 10 GB,
+  notify me.", "...USB drive?", "?", whitespace, "free memory" (imperative), "system status"
+  (broad), "running processes" (unfulfillable).
+- **BLOCKER 2 (turn ends without requested result) FIXED:** `scan_storage(family)` dispatches
+  ONLY the requested probe (disk/memory/status/docker), each with its own timeout; the hook
+  blocks only if that probe returns valid data. No more 5-probe serial scan (was up to ~28s of
+  timeouts for an "uptime" request); no more blocking a RAM query with only root-disk data.
+- Tests now assert the exact family for supported phrases and None for all blocker/ambiguous
+  cases. Full suite ALL PASS. Senior (codex) final sign-off pending; commit after.
+- **SHIP (codex gpt-6.2-sol final gate, 6 rounds):** whole-request allowlist + per-probe
+  dispatch + output validation. No false-positive on write/conditional/multi-intent in review.
+  Key fixes across rounds: (family,regex) tuples (killed parallel-list mislabel), root-scope
+  enforcement (drive/partição/partition rejected), fullmatch + mandatory content, per-probe
+  scan (no 28s serial), output validators (df exactly-6-fields+mount=='/', memory exact
+  'Mem:'+all size-like, docker SIZE-column, uptime 3 numeric loads). Threat model: fixed probe
+  commands (not user-controlled) — residual malformed-output risk is a wrong-but-harmless
+  status line, not injection. Live e2e still pending reboot (swap wall).
